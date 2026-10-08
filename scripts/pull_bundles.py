@@ -1,10 +1,11 @@
 """碧蓝航线 L2D 资源 adb 拉取器：设备 files/AssetBundles/live2d -> .tmp/bundles/。
 
-用法:
-    python scripts/pull_bundles.py <skin_id>...       # 按皮肤 id 拉取（fulici_2 等，_hx 为改造/婚变体）
-    python scripts/pull_bundles.py --all              # 拉取全部 bundle（先预览总量，需确认）
-    python scripts/pull_bundles.py --list [关键词]    # 只列出远端 bundle（可按关键词过滤）
-    python scripts/pull_bundles.py --index            # 只更新 .tmp/ 下的索引缓存
+用法（uv 与裸 python 二选一）:
+    uv run scripts/pull_bundles.py <skin_id>...       # 按皮肤 id 拉取（fulici_2 等，_hx 为改造/婚变体）
+    python scripts/pull_bundles.py <skin_id>...       # 同上，裸 python（仅标准库，无需装依赖）
+    ... --all                                         # 拉取全部 bundle（先预览总量，需确认）
+    ... --list [关键词]                               # 只列出远端 bundle（可按关键词过滤）
+    ... --index                                       # 只更新 .tmp/ 下的索引缓存
 
 选项:
     --host ADDR     先 adb connect（模拟器地址，如 127.0.0.1:5555）
@@ -27,7 +28,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ADB = ROOT / "tools" / "adb.exe"
+ADB = ROOT / "tools" / "adb" / "adb.exe"
 
 REMOTE_FILES_DIR = "files/AssetBundles/live2d"
 INDEX_FILES = ("hashes-live2d.csv", "version-live2d.txt")

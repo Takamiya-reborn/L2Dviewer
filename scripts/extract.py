@@ -1,13 +1,14 @@
 """碧蓝航线 Live2D 皮肤提取器：UnityFS bundle -> 标准 Cubism 4 模型。
 
-用法:
+用法（uv 与裸 python 二选一）:
     uv run scripts/extract.py <skin_id>     # 如 fulici_2
-    uv run scripts/extract.py <bundle_path> <out_dir>   # 兼容旧用法
+    python scripts/extract.py <skin_id>     # 裸 python，需先 pip install -r requirements.txt
+    ... <bundle_path> <out_dir>             # 兼容旧用法
 
 产物 (out_dir) —— 一次提取即完整模型资源，逆向无需再回头 dump:
 
     <id>.moc3 / <id>.model3.json / <id>.physics3.json / <id>.char.json
-    <id>.interaction.json
+    <id>.interaction.json   （clips 交互状态数据 + animator 动作编号路由表）
     <id>.defaults.json      参数默认值/min/max（解析自 moc3 二进制，见下）
     <id>.inventory.json     bundle 全量参考：GameObject 表、全部组件 typetree
                             （CubismMoc._bytes 除外——.moc3 文件本身已落盘）、
@@ -400,14 +401,33 @@ def _all_switch_like(values: list) -> bool:
     return True
 
 
-def clip_boundary_state(clip, path_hash) -> dict:
+def _boundary_switch_like(values: list, rng) -> bool:
+    """带弹性过冲的开关曲线：首末采样贴 0/±1，全程不越出 moc 量程
+    （容差 0.05），且量程宽度 ≤1.25。
+
+    典型如 uicaidan（菜单 UI 开关，量程 [0,1.1]）：摊开动画带 0.32/1.1
+    的过冲中间值，_all_switch_like 会整条落选，导致该开关不进状态表——
+    运行时复位会把摊开的菜单抹掉、分支门控也失去这项前置状态。
+    量程宽度是反向保险：姿态移动件（ParamAngleZ ±30、jianX ±10 等）
+    即便首末值恰好贴 0/±1 也不得入选，否则会被拿去做点击门控。
+    """
+    if rng is None or rng["max"] - rng["min"] > 1.25:
+        return False
+    if min(abs(values[0]), abs(values[0] - 1.0), abs(values[0] + 1.0)) > 0.02:
+        return False
+    if min(abs(values[-1]), abs(values[-1] - 1.0), abs(values[-1] + 1.0)) > 0.02:
+        return False
+    return all(rng["min"] - 0.05 <= v <= rng["max"] + 0.05 for v in values)
+
+
+def clip_boundary_state(clip, path_hash, ranges=None) -> dict:
     """每支动作的首/末参数值（仅开关型），供还原跨动作交互状态。
 
     游戏不在动作间复位参数：touch_idle1 结束时 caidan=1（菜单摊开）、
     dianjikyc=1（菜单可点），该状态跨动作持续；touch_idle2/4/7 以
     caidan=1 起播（菜单摊开时的分支动作）。由此可推出"打开器/分支"
-    的点击门控协议。默认值不在 bundle 里（在 moc3），由运行时
-    getParameterDefaultValue 比对。
+    的点击门控协议。ranges 是 moc3 参数量程（pid -> min/max），供
+    _boundary_switch_like 识别带过冲的开关曲线；缺省时只走严格判据。
     """
     mc = clip.m_MuscleClip
     cd = mc.m_Clip.data
@@ -444,9 +464,12 @@ def clip_boundary_state(clip, path_hash) -> dict:
             continue
         pts.sort()
         values = [v for _, v in pts]
-        if not _all_switch_like(values):
-            continue
         pid = rel.split("/")[-1]
+        if not (
+            _all_switch_like(values)
+            or _boundary_switch_like(values, ranges.get(pid) if ranges else None)
+        ):
+            continue
         if pts[0][1] == 0.0 and pts[-1][1] == 0.0:
             continue  # 首末均为 0，不含边界信息
         state[pid] = [round(pts[0][1], 4), round(pts[-1][1], 4)]
@@ -464,6 +487,113 @@ def clip_group(name: str) -> str:
     if name.startswith("idle"):
         return "idle"
     return name
+
+
+def animator_routing(env) -> dict | None:
+    """解包 AnimatorController 的状态路由表（交互动作的播放入口）。
+
+    游戏不直接 Play 动画，而是 C# 控制器对 Animator SetInteger + SetTrigger，
+    经 AnyState 转移进入目标状态。转移条件只有三类参数：主 int（Equals）
+    即"动作编号"，其值域与状态一一对应——1~19=系统动作（idle/main_*/login/
+    home/mail/mission/wedding…）、101~110=touch_drag 系、201~221=touch_idle
+    系；次 int 是 idle 变体号（主 int=1 时选中 idle_list.idle<N>）；触发器
+    （If 条件）每次手势时置位。动作里嵌的 OnFinishAnim(N) 事件即结束时
+    SetInteger(主 int, N)：系统动作 N=自身编号（自循环），触摸反应 N=0
+    （无状态匹配，回落默认 idle）——这正是交互状态机"播完落节点"的数据源。
+
+    状态→clip 对应与动作编号只存在于本序列化数据，是"状态编号 -> 动作"
+    的权威表。某皮肤未携带某状态的动作时该状态为空跳板（进入后保持当前
+    姿态），实际行为由游戏 C# 决定（如 TouchDrag 分区是否改映射到
+    touch_idle 分支、或直接切换图层参数，均不在 bundle 数据内）。
+
+    产物结构：
+        paramKinds: 条件参数哈希 -> "int"/"trigger"（mode 6=Equals, 1=If）
+        states:     [{name, actionId, subIndex, clip}]，clip=null 表示该皮肤
+                    未携带此动作
+    """
+    ctrl = None
+    clip_names = {}
+    for obj in env.objects:
+        if obj.type.name == "AnimatorController":
+            ctrl = obj.read_typetree()
+        elif obj.type.name == "AnimationClip":
+            clip_names[obj.path_id] = obj.read().m_Name
+    if ctrl is None:
+        return None
+    tos = {h: n for h, n in ctrl["m_TOS"]}
+    clip_refs = ctrl["m_AnimationClips"]
+
+    entries = []  # (state_name, conditions[[hash,mode,threshold]...], clip)
+    for sm in ctrl["m_Controller"]["m_StateMachineArray"]:
+        smd = sm["data"] if "data" in sm else sm
+        # AnyState 转移与状态按下标对位（m_DestinationState 即状态数组下标）
+        any_trans = {
+            t["data"]["m_DestinationState"]: t["data"]
+            for t in smd.get("m_AnyStateTransitionConstantArray", [])
+        }
+        for i, st in enumerate(smd.get("m_StateConstantArray", [])):
+            sd = st["data"] if "data" in st else st
+            name = tos.get(sd.get("m_FullPathID"), f"state{i}").split(".")[-1]
+            conds = []
+            td = any_trans.get(i)
+            if td:
+                conds = [
+                    [
+                        c["data"]["m_EventID"],
+                        c["data"]["m_ConditionMode"],
+                        c["data"]["m_EventThreshold"],
+                    ]
+                    for c in td.get("m_ConditionConstantArray", [])
+                ]
+            clip = None
+            for bti in sd.get("m_BlendTreeConstantIndexArray", []):
+                if bti is None or bti < 0:
+                    continue
+                bt = sd["m_BlendTreeConstantArray"][bti]["data"]
+                for node in bt.get("m_NodeArray", []):
+                    cid = node["data"]["m_ClipID"]
+                    if 0 <= cid < len(clip_refs):
+                        pid = clip_refs[cid].get("m_PathID", 0)
+                        clip = clip_names.get(pid)  # 外部引用/空动作解析为 null
+            entries.append((name, conds, clip))
+
+    # 主 int = 出现在 Equals 条件里最多的参数（每个状态一条编号）
+    int_count = {}
+    trigger_hashes = set()
+    for _, conds, _ in entries:
+        for h, mode, _ in conds:
+            if mode == 6:
+                int_count[h] = int_count.get(h, 0) + 1
+            elif mode == 1:
+                trigger_hashes.add(h)
+    main_hash = max(int_count, key=int_count.get) if int_count else None
+
+    states = []
+    for name, conds, clip in entries:
+        action_id = sub_index = None
+        for h, mode, thr in conds:
+            if mode != 6:
+                continue
+            if h == main_hash:
+                action_id = int(thr)
+            else:
+                sub_index = int(thr)
+        states.append(
+            {"name": name, "actionId": action_id, "subIndex": sub_index, "clip": clip}
+        )
+    states.sort(
+        key=lambda s: (
+            s["actionId"] is None,
+            s["actionId"] or 0,
+            s["subIndex"] is None,
+            s["subIndex"] or 0,
+        )
+    )
+    param_kinds = {
+        str(h): ("trigger" if h in trigger_hashes else "int")
+        for h in set(int_count) | trigger_hashes
+    }
+    return {"paramKinds": param_kinds, "states": states}
 
 
 def main() -> None:
@@ -549,6 +679,7 @@ def main() -> None:
         )
     else:
         print("[warn] moc3 参数表(min/max/defaults)解析失败，跳过 defaults.json")
+    param_ranges = defaults if tables else None
 
     for name, raw in text_assets.items():
         try:
@@ -575,7 +706,7 @@ def main() -> None:
         curves, duration = convert_clip(clip, bindings, path_hash)
         # 交互状态机数据：AnimationEvent + 开关型参数的首末值（见函数注释）
         events = clip_events(clip)
-        boundary = clip_boundary_state(clip, path_hash)
+        boundary = clip_boundary_state(clip, path_hash, param_ranges)
         inv_clips.append(
             {
                 "name": clip.m_Name,
@@ -640,10 +771,18 @@ def main() -> None:
     # --- 交互状态机数据（本项目扩展文件，标准运行时忽略）
     # clips: 每支动作的 AnimationEvent（OnAnimEvent/OnFinishAnim 状态编号）
     #        与开关型参数的首/末值（[起, 止]，跨动作持续的菜单/道具开关）。
+    # animator: AnimatorController 状态路由表（状态 -> 动作编号 -> clip），
+    #           OnFinishAnim(N) 即结束时回写的动作编号（见函数注释）。
     # 运行时据此实现：点击门控（仅菜单摊开时可点菜单分支）、跨动作保留
     # 状态参数、动作结束上报状态编号。
+    interaction_data = {"clips": interaction_clips}
+    routing = animator_routing(env)
+    if routing:
+        interaction_data["animator"] = routing
+    else:
+        print("[warn] 未找到 AnimatorController，跳过路由表")
     (out_dir / f"{model_id}.interaction.json").write_text(
-        json.dumps({"clips": interaction_clips}, ensure_ascii=False, indent=2),
+        json.dumps(interaction_data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 

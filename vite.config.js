@@ -9,7 +9,7 @@ import { defineConfig } from 'vite'
  */
 function modelsManifest() {
   const VIRTUAL = 'virtual:models'
-  const modelsDir = join(__dirname, 'public/models')
+  const modelsDir = join(import.meta.dirname, 'public/models')
 
   function scan() {
     const models = []

@@ -15,8 +15,12 @@ const stageRef = ref(null)
 /** 当前模型的可触发动作组（由舞台加载后上报）与最近一次触发项 */
 const triggers = ref([])
 const activeTrigger = ref('')
-/** idle 是自动循环的待机动作、effect 是常驻氛围层（ambient.js 叠加），均非状态触发；按 TRIGGER_ORDER 排列，未收录的排末尾 */
-const NON_TRIGGERS = new Set(['idle', 'effect'])
+/**
+ * 不进状态触发面板的动作组：idle 是自动循环的待机动作、effect 是常驻氛围层
+ * （ambient.js 叠加）、touch_idle/touch_drag 只由舞台手势（点击/拖拽松手）
+ * 触发；按 TRIGGER_ORDER 排列，未收录的排末尾。
+ */
+const NON_TRIGGERS = new Set(['idle', 'effect', 'touch_idle', 'touch_drag'])
 const triggerItems = computed(() => {
   const rank = (id) => {
     const i = TRIGGER_ORDER.indexOf(id)

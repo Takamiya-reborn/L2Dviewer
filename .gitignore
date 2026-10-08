@@ -16,9 +16,10 @@ dist-ssr
 public/models/*
 !public/models/.gitkeep
 
-# 提取管线临时产物（bundle 拉取、venv 等）
+# 提取管线临时产物（bundle 拉取、社区解密 Lua 快照、venv 等）
 .tmp
 .venv
+__pycache__
 
 # Editor directories and files
 .vscode/*

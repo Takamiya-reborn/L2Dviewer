@@ -43,11 +43,27 @@
 
 ## 3. 交互状态机
 
-游戏没有显式的状态机数据结构，交互逻辑分散在三类载体中：
+交互由 Unity **AnimatorController** 驱动（序列化在 bundle 内，UnityPy 可完整
+解析 `m_Controller` blob），逻辑分散在三类载体中：
+
+- **控制器路由**（bundle 内，可提取）：C# 层不直接播动画，而是
+  `SetInteger(动作编号)` + `SetTrigger`，经 AnyState 转移进入对应状态（转移
+  与状态 1:1，条件 `m_ConditionMode` 6=Equals 整数、1=If 触发器）。主 int
+  即**动作编号 ActionId**，取值域：
+  - 1–19 系统动作：idle=1、main_1/2/3=2/3/4、complete=5、login=6、home=7、
+    mail=8、mission=9、mission_complete=10、wedding=11、touch_head=12、
+    touch_body=13、touch_special=14、金币/油/钻石=15/16/17、main_4/5=18/19
+  - 101–110 = touch_drag0–9；201–221 = touch_idle0–20
+
+  次 int 是 idle 变体号（ActionId=1 时选 `idle_list.idle<N>`）。每个状态对应
+  一支动作或为**空跳板**（该皮肤未带这支动作，收到编号后无画面变化，实际
+  效果由 C# 直接改参数实现）。状态→动作对应与编号只存在这份序列化数据里，
+  由 `extract.py` 提取进 interaction.json 的 `animator` 节
 
 - **AnimationEvent 钩子**：每支动作内嵌事件——`OnAnimEvent(0)` 在动作开头触发
-  （语音/配音钩子）；`OnFinishAnim(N)` 在动作结尾上报动作状态编号，N 与动作
-  一一对应，是游戏内状态机的状态标识
+  （语音/配音钩子）；`OnFinishAnim(N)` 在动作结尾 `SetInteger(ActionId, N)`：
+  系统动作 N=自身编号（自循环），触摸反应 N=0（无状态匹配，回落默认 idle）
+  ——即"播完进入等待输入"语义
 - **跨动作参数状态**：游戏不在动作间复位参数，图层/道具开关型参数（取值贴
   0/±1，如菜单开合、菜单可点区）的值跨动作持续。"菜单摊开"就是 touch_idle
   系列动作播完后开关值残留在运行时里
@@ -59,33 +75,79 @@
 参数默认值不在 bundle 内（在 moc3 二进制中），运行时以"非默认即状态残留"判断
 当前状态。
 
+点击分区（`TouchDragN` 等分区 GameObject）到 ActionId/图层参数的映射在游戏
+Lua 配置 `pg.ship_l2d` 里（键 = 皮肤id\*100 + 序号），bundle 提取不到——
+如 TouchDrag1（高跟鞋区）拖拽切换图层，而 touch_drag 组多数状态是空跳板，
+实际路由到别的 ActionId 分支或 C# 直接改图层参数。这份数据由社区解密仓库
+提供（来历见下），`scripts/parse_ship_l2d.py <skin_id>` 可解析，
+`scripts/bake_l2d.py <painting名>` 可把整皮肤配置烘焙进模型目录
+（`<id>.l2d.json`，运行时消费方式见 README"查看器实现"）：
+fulici_2（皮肤 407041）实测 16 区，含拖拽参数机（range/smooth/revert/吸附
+档位 `parts_data`）、触发条件（`action_trigger` 的 type/circle/target）与
+idle 变体切换（`action_trigger_active.idle`：touch_idle1/2/4/6/8 →
+idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
+
+**控制层语义**（通读 `view/ship/live2d.lua` / `live2ddrag.lua` /
+`live2dextend.lua` 得出，Web 移植见 `src/utils/dragmachine.js`）：
+
+- 每条 ship_l2d 条目 = 一台 Live2dDrag 参数机：分区（`draw_able_name`）绑定
+  参数（`parameter`），按下命中分区即激活（`startDrag`），拖动时
+  `offset = target + (指针-按下点)/offset_x|y`（offset = 拖动 1 单位参数的
+  像素数），目标值经 `drag_direct`（1=负向钳 0 / 2=正向钳 0）、`range_abs`
+  （取绝对值）、`range`（钳制）修正，`smooth`/1000 秒平滑趋近（差 <0.05 贴合）；
+  松手时 `parts_data.parts` 吸附最近档位，`revert`/1000 秒后回 `start_value`
+  （-1 = 不回弹且持久化，`save_parameter=-1` 除外），`revert_smooth` 是回弹时长
+- 触发 `action_trigger.type`：1=按住 num 附近达 time 秒、2=点击（|dx|<30px
+  且 <0.5s，松手后 0.1s 确认；`action` 可为随机数组）、3=按住 time 秒
+  （action_list 顺序播，`last` 松手收尾）、4=xy 双参联动、5=idle 常量跟随、
+  6=连点循环 action_list、7=监听外部事件、8=按住充能（delta 秒/单位）、
+  9=点击时他参贴近 num、10=当前动画过 trigger_rate 时链触发、11=点击时本参
+  在 range 内、12=扩展规则、13=跟随他参变动、14=区间上下行触发、15/16=下棋
+  小游戏。`circle`+`target`：触发把参数设到 target，已在 target 则回
+  start_value（图层 0↔1 切换）；`focus=1` 按下即触发；`target_focus=1`
+  参数跳变；`limit_time`（默认 4s）是触发冷却
+- 触发成功后应用 `action_trigger_active`：`enable`/`ignore` 是之后的动作
+  白名单/黑名单（**对一切动作播放生效**，含系统面板触发；空数组 = 清空），
+  `idle`（数字或数组）切换待机变体——即 Animator SetInteger("idle")，
+  触发即设、播完落 idle 态时生效；重复 idle 且未开 `repeat_flag` 时整个
+  触发跳过。机器按下期间（`EVENT_ACTION_ABLE`）一切动作播放被临时屏蔽
+- 机器参数以 `AddParameterValue(parameter, start_value, mode)` 注册为叠加
+  来源：mode 1=Override / 2=Additive / 3=Multiply，逐帧覆盖在动作求值结果
+  之上（模型里不存在该参数时机器只记账不写值）
+- `relation_parameter.list` 联动参数：type 101/102 跟随拖动量、103 跟随
+  action_list 下标（查 relation_value 表）、104 按 idle + 计时激活，默认跟随
+  机器参数目标值，SmoothDamp 平滑（smooth/1000 秒）
+- 待机变体号 → 动作 clip 的对应只在 Animator 路由表里（extract.py 产出的
+  interaction.json `animator.states`：actionId=1 的 subIndex 即变体号），
+  bake_l2d.py 据此生成 `idle_index` 映射表供运行时查表
+
+**游戏 Lua 的来历**：github.com/AzurLaneTools/AzurLaneLuaScripts（社区自动
+解密发布的明文游戏脚本）。用到的文件由 `scripts/pull_lua.py`
+（uv / 裸 python 均可）拉取到 `.tmp/lua/<服务器>/`——落点硬编码固定，
+无路径参数（CN/EN/JP/KR/TW，
+`--server` 可多选；
+gitignore，不入库）：`sharecfg/ship_l2d.lua`（交互配置）、
+`sharecfgdata/ship_skin_template.lua`（painting 名 → 皮肤 id 映射）、
+`view/ship/live2d*.lua` 与 `mgr/live2dmgr.lua`（控制层，字段语义的参照，
+本节"控制层语义"即通读这三个文件得出）。
+上游仓库停更不影响已有快照；C# 侧语义参考由 Il2CppDumper 的 dump 产物提供
+（工具来历见下）。
+
 以上数据由 `extract.py` 提取为 `<id>.interaction.json`，字段语义见
 [unpack.md](unpack.md)。
 
-## 4. 提取管线
-
-`scripts/extract.py` 读入单个皮肤 bundle，一次完成五步：解包（UnityPy 提取
-moc3/贴图/物理/动画与上述组件数据）→ ASTC 贴图转码 PNG → AnimationClip 曲线
-换算 motion3.json → 重组标准 `model3.json` 并按 `public/models/<角色>/<皮肤id>/`
-落盘 → 同时输出 inventory/defaults 等全量参考数据。产物清单见
-[unpack.md](unpack.md)。
-
-## 5. Web 端还原
-
-- **皮肤清单**：`vite.config.js` 的 modelsManifest 插件启动/构建时扫描
-  `public/models/<角色>/<皮肤id>/<皮肤id>.model3.json` 自动生成（虚拟模块
-  `virtual:models`），新增皮肤重启 dev 即生效，无需手工登记
-- **加载**：pixi-live2d-display（PixiJS 插件，Cubism 4）加载 model3.json
-  （idle 组命名注意项见 [unpack.md](unpack.md) 已知限制）
-- **点击**：tap 命中 HitArea → 经交互运行时（`src/utils/interaction.js`）
-  按 interaction.json 做状态门控后播放对应动作组
-- **拖拽**：指针拖拽按 `Live2dChar` 的 DragRateX/Y 与 DampingTime 做阻尼视线跟随
-- **待机**：`idle` 组随机循环
-- **氛围层**：`effect` 组作为常驻层，按 motion3.json 曲线逐帧采样后直写参数，
-  叠加在任意动作之上（`src/utils/ambient.js`）
-
-## 6. 环境与工具约定
+## 4. 环境与工具约定
 
 - Python：依赖见 `requirements.txt`（UnityPy）；提取脚本在 `scripts/`，
-  `tools/` 只放 adb 等 OS 工具
+  `tools/` 放随仓库分发的第三方工具
 - Node：mise 管理（`mise.toml`）
+- `tools/`（入库，许可证见 README 版权说明）：
+  - `tools/adb/` — Android platform-tools，`pull_bundles.py` 拉资源用
+  - `tools/Il2CppDumper/` — [Perfare/Il2CppDumper](https://github.com/Perfare/Il2CppDumper)
+    （MIT），dump 游戏 Il2Cpp 程序集用；只保留 x64 主程序与 config.json
+- `.tmp/`（gitignore，管线工作目录，按需自建）：
+  - `.tmp/bundles/` — `pull_bundles.py` 拉取的皮肤 bundle
+  - `.tmp/lua/` — [AzurLaneTools/AzurLaneLuaScripts](https://github.com/AzurLaneTools/AzurLaneLuaScripts)
+    的明文游戏 Lua 子集（按服务器分子目录），由 `pull_lua.py` 拉取（文件清单见
+    第 3 节；`extract.py` 本身不依赖它，仅 `parse_ship_l2d.py` 解析交互配置用，
+    读取路径同为 `.tmp/lua/<服务器>/`，两端硬编码对齐，勿改其一）

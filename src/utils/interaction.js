@@ -9,8 +9,16 @@
  * 游戏不在动作间复位参数，状态机参数的值跨动作持续，"点击摊开菜单 ->
  * 分支 -> 收尾"的状态机就建立在参数连续性上：
  * - 跨动作保留：touch_idle1 播完后 caidan=1（菜单摊开）持续到分支播完；
- * - 点击门控：每支动作的起播边界即其可达前置状态（touch_idle2/4/6/8 以
- *   caidan=1 起播，仅菜单摊开时是合法分支）。
+ * - 点击门控：起播值=1 的开关是前置状态（动作依赖该图层/道具已摊开，
+ *   touch_idle2/4/6/8 以 caidan=1 起播，仅菜单摊开时是合法分支）。
+ *
+ * 运行时把它实现成显式的有向图：节点 = 状态参数的值向量，动作 = 边
+ * （起播值=1 的开关 = 前置约束，结束值 = 转移结果）。节点被显式跟踪——
+ * 动作起播先挂起（pending），播完（motionFinish，即游戏 OnFinishAnim 的
+ * 上报时机）才落实转移；被新动作顶掉的挂起动作按"已播完"结算（结束值
+ * 是绝对值，重复应用幂等）。门控一律查节点而非实时参数：实时值会被
+ * 逐帧曲线、眨眼/呼吸等姿态系统扰动（如点击瞬间正逢眨眼，ParamEyeLOpen
+ * 离 1 很远，按实时值比对会误拒合法分支），节点只在转移时变化。
  */
 import { Container, Graphics, Text } from 'pixi.js'
 import { MotionPriority } from 'pixi-live2d-display/cubism4'
@@ -46,6 +54,54 @@ export class InteractionRuntime {
         .map((pid) => core.getParameterIndex(pid))
         .filter((i) => i >= 0 && i < core.getParameterCount()),
     )
+
+    // ---- 有向图节点跟踪 ----
+    // 节点 = statePids 的值向量，初值取 moc 默认（模型加载即干净默认姿态）。
+    // pending 是"已起播但转移未落实"的 clip：motionFinish 结算它；被下一支
+    // 动作顶掉时由 trackMotionStart 先行结算（结束值为绝对值，幂等）。
+    this.eps = 0.05
+    this.node = new Map(
+      [...this.statePids].map((pid) => [pid, this.paramDefault(pid)]),
+    )
+    // 门控前置集：起播值=1 且该值可产出（某动作结束值=1，或 moc 默认=1）。
+    // 起播值 0/-1 是 t0 硬设（消隐/复位/表情预设），不构成前置——全参数严格
+    // 匹配会误拦 touch_idle4/6/8（它们以 dianjikyc=0 起播只是收起菜单可点
+    // 区）；不可产出的前置（如 touch_idle6 的 panjiubei=1，数据中无任何动
+    // 作产出该值）若参与门控会让分支永久不可达，同样豁免，待提取补全后再
+    // 收紧。
+    this.gatedPids = new Set(
+      Object.values(clips)
+        .flatMap((c) => Object.entries(c.state ?? {}))
+        .filter(([, [, end]]) => end === 1)
+        .map(([pid]) => pid),
+    )
+    for (const pid of this.statePids) {
+      if (this.paramDefault(pid) === 1) this.gatedPids.add(pid)
+    }
+    this.pending = null
+    // 挂起的动作是否 idle 组:等待态判定用(见 canPlay)。idle 循环算等待态,
+    // 其他动作播放中不算
+    this.idleGroup = model.internalModel.motionManager?.groups?.idle ?? 'idle'
+    this.pendingIdle = false
+    // 白名单钩子：拖拽参数机编排器（L2dStage 挂载后注入）——游戏 Lua 层的
+    // checkEnablePlay 对一切动作播放生效（enable/ignore 名单存 clip 名），
+    // 这里前置到 canPlay，供命中路径与 playHitMotion 的组内选支共用
+    this.checkEnable = null
+    if (interaction) {
+      const manager = model.internalModel.motionManager
+      manager.on('motionStart', (group, index) => this.trackMotionStart(group, index))
+      manager.on('motionFinish', () => this.trackMotionFinish())
+    }
+  }
+
+  /** moc 默认值（按参数 id；模型里不存在的参数没有默认值，按 0 处理，
+      与 paramValue 的虚拟下标行为一致） */
+  paramDefault(pid) {
+    const core = this.model.internalModel.coreModel
+    const index = core.getParameterIndex(pid)
+    return index >= 0 && index < core.getParameterCount()
+      ? core.getParameterDefaultValue(index)
+      : 0
   }
 
   /** 当前参数值（按参数 id；模型里不存在的参数经核心映射为虚拟下标，值为 0） */
@@ -53,42 +109,115 @@ export class InteractionRuntime {
     return this.model.internalModel.coreModel.getParameterValueById(pid)
   }
 
+  /** motion3 文件路径 -> clip 名（settings 的动作定义按组/下标给出） */
+  clipOf(group, index) {
+    const def = this.model.internalModel.settings?.motions?.[group]?.[index]
+    return (def?.File ?? '').split('/').pop()?.replace(/\.motion3\.json$/, '') || null
+  }
+
+  /** 起播：先结算被顶掉的挂起动作，再挂起新动作 */
+  trackMotionStart(group, index) {
+    if (this.pending) this.applyEnd(this.pending)
+    this.pending = this.clipOf(group, index)
+    this.pendingIdle = group === this.idleGroup
+  }
+
+  /** 播完：落实挂起动作的转移（游戏 OnFinishAnim 的上报时机） */
+  trackMotionFinish() {
+    this.applyEnd(this.pending)
+    this.pending = null
+    this.pendingIdle = false
+  }
+
+  /** 把 clip 的结束值写进节点——有向图中沿这条边走一步。只写节点域内
+      （statePids）的参数：end-only 参数（起播恒 0，如 sdrtx）由
+      resetParameters 的常规复位管理，写入节点会让它永久残留 */
+  applyEnd(clipName) {
+    const state = this.interaction?.clips?.[clipName]?.state
+    if (!state) return
+    for (const [pid, [, end]] of Object.entries(state)) {
+      if (this.statePids.has(pid)) this.node.set(pid, end)
+    }
+  }
+
+  /** 节点复位到干净默认态（"重置交互状态"用）：清挂起转移，状态参数全部
+      回 moc 默认。配合拖拽参数机编排器的 resetAll 一起调 */
+  resetState() {
+    this.node = new Map(
+      [...this.statePids].map((pid) => [pid, this.paramDefault(pid)]),
+    )
+    this.pending = null
+    this.pendingIdle = false
+  }
+
+  /** 中性节点：全部状态参数都贴着 moc 默认值（无任何跨动作残留） */
+  isNeutral() {
+    for (const [pid, value] of this.node) {
+      if (Math.abs(value - this.paramDefault(pid)) > this.eps) return false
+    }
+    return true
+  }
+
   /**
    * 命中检测只看网格包围盒，不判断透明度，隐藏部位（其他姿态的判定网格、
    * 摆位零件）也会响应；这里按 drawable 不透明度过滤，只保留可见命中区。
+   *
+   * 手势区分（与游戏一致）：一次 raycast 会同时命中 idle/head/body 与 drag
+   * 两族分区，控制器按手势挑族——点击取非 drag 分区，拖拽只取 drag 分区。
+   *
+   * @param {string[]} names 命中的分区名（internalModel.hitTest 的返回）
+   * @param {'tap'|'drag'} gesture
    */
-  firstVisibleHit(names) {
+  firstVisibleHit(names, gesture = 'tap') {
     const core = this.model.internalModel.coreModel
     const areas = this.model.internalModel.hitAreas ?? {}
     const hasOpacity = typeof core.getDrawableOpacity === 'function'
+    const wantDrag = gesture === 'drag'
     for (const name of names) {
       const index = areas[name]?.index
       if (index === undefined) continue
+      if (name.startsWith('touch_drag') !== wantDrag) continue
       if (!hasOpacity || core.getDrawableOpacity(index) > 0.001) return name
     }
     return ''
   }
 
   /**
-   * 点击门控：动作的开关型参数起播值即其可达前置状态（游戏按参数连续性
-   * 授权交互）。当前状态与起播边界不符（如菜单收起时点菜单项）则不可触发。
+   * 点击门控：与跟踪节点比对而非实时参数（实时值受逐帧曲线与眨眼/呼吸
+   * 扰动）。前置只取起播值=1 且可产出的开关（见构造函数 gatedPids）——
+   * 起播值=1 意味着动作依赖该图层/道具已摊开/已持有（如菜单分支以
+   * caidan=1 起播，仅菜单摊开时合法）。不符（如菜单收起时点菜单项）则
+   * 不可触发。未收录/无开关参数的反应动作（touch_drag 系等，extract.py
+   * 只落盘有事件或边界数据的 clip）在游戏里由控制器状态而非参数门控。
+   * 手势只在等待态被处理（动作播放中途控制器不响应手势），而 idle 循环
+   * 与分支挂起（姿态保持、等待后续手势收尾）都算等待态，故按"无挂起
+   * 动作或挂起的是 idle"放行——菜单摊开后等待拖拽（touch_idle1 ->
+   * touch_drag*）正是挂起态下的合法分支，旧的"仅中性节点"近似会误拦。
    */
   canPlay(clipName) {
-    const state = this.interaction?.clips?.[clipName]?.state
-    if (!state) return true
+    if (this.checkEnable && !this.checkEnable(clipName)) return false
+    if (!this.interaction) return true
+    const state = this.interaction.clips?.[clipName]?.state
+    if (!state || !Object.keys(state).length) {
+      return this.pending === null || this.pendingIdle
+    }
     for (const [pid, [start]] of Object.entries(state)) {
-      if (Math.abs(this.paramValue(pid) - start) > 0.05) return false
+      if (start !== 1 || !this.gatedPids.has(pid)) continue
+      if (Math.abs((this.node.get(pid) ?? 0) - 1) > this.eps) return false
     }
     return true
   }
 
   /**
-   * 把参数复位到 moc3 默认值——但跳过状态机参数（preserveIdx）。
-   * 游戏内每个 AnimationClip 都假定从默认姿态起播；而 idle 组只覆盖约 1/5
-   * 的参数，若不复位，上一支动作遗留的图层/道具开关（如 ParamCrusLLayer2、
-   * heiping）会持续污染后续动作，产生穿模、碎片残影等渲染错误。
-   * 在 motionStart 时调用可确保动作首次求值前参数是干净的（update 的
-   * loadParameters 只恢复到"上一帧动作求值后"的值，不会冲掉这里写入的值）。
+   * 按节点复位参数：非状态机参数回到 moc3 默认值，状态机参数对齐到跟踪
+   * 节点的值。游戏内每个 AnimationClip 都假定从默认姿态起播；而 idle 组只
+   * 覆盖约 1/5 的参数，若不复位，上一支动作遗留的图层/道具开关（如
+   * ParamCrusLLayer2、heiping）会持续污染后续动作，产生穿模、碎片残影等
+   * 渲染错误。状态机参数不能简单复位也不能简单保留——被中途打断的动作会
+   * 把实时值留在半途（如菜单摊到一半），节点才是协议意义上的当前状态，
+   * 对齐到节点同时消除打断残留。在 motionStart 时调用可确保动作首次求值
+   * 前参数是干净的（update 的 loadParameters 只恢复到"上一帧动作求值后"的
+   * 值，不会冲掉这里写入的值；新动作曲线随后逐帧接管它涉及到的参数）。
    */
   resetParameters() {
     const core = this.model.internalModel.coreModel
@@ -97,6 +226,7 @@ export class InteractionRuntime {
       if (this.preserveIdx.has(i)) continue
       core.setParameterValueByIndex(i, core.getParameterDefaultValue(i))
     }
+    for (const [pid, value] of this.node) core.setParameterValueById(pid, value)
   }
 
   /**
@@ -133,8 +263,9 @@ export class InteractionRuntime {
 
 /**
  * 交互点可视化提示（测试用）：每个命中区一个半透明圆点标在其 drawable
- * 网格中心——绿 = 可点（起播门控通过）、红 = 被门控挡下、隐藏网格（如
- * 菜单收起时的菜单项）不显示；位置每帧跟随模型。
+ * 网格中心，外加网格包围盒轮廓（isHit 的实际判定范围）——绿 = 可点
+ * （起播门控通过）、红 = 被门控挡下、隐藏网格（如菜单收起时的菜单项）
+ * 不显示；位置每帧跟随模型。
  *
  * @param app pixi Application（提示层挂到其 stage）
  * @param getRuntime () => InteractionRuntime | null，每帧取当前运行时
@@ -190,19 +321,39 @@ export function createInteractionHints(app, getRuntime, getVisible) {
           continue
         }
         const verts = runtime.model.internalModel.getDrawableVertices(h.idx)
+        let minX = Infinity
+        let minY = Infinity
+        let maxX = -Infinity
+        let maxY = -Infinity
         let cx = 0
         let cy = 0
         for (let j = 0; j < verts.length; j += 2) {
-          cx += verts[j]
-          cy += verts[j + 1]
+          const x = verts[j]
+          const y = verts[j + 1]
+          if (x < minX) minX = x
+          if (x > maxX) maxX = x
+          if (y < minY) minY = y
+          if (y > maxY) maxY = y
+          cx += x
+          cy += y
         }
         const n = verts.length / 2
         const g = runtime.model.toGlobal({ x: cx / n, y: cy / n })
         h.dot.visible = h.label.visible = true
-        h.dot.position.set(g.x, g.y)
+        h.dot.position.set(0, 0)
         h.dot.clear()
-        h.dot.beginFill(runtime.canPlay(h.name) ? 0x4fc08d : 0xe05555, 0.35)
-        h.dot.drawCircle(0, 0, 9)
+        // 判定网格包围盒轮廓（模型空间取角点转全局坐标）：isHit 就是这个
+        // 矩形的精确包含测试，画出实际覆盖范围，对照松手位置排查命中落空
+        const p0 = runtime.model.toGlobal({ x: minX, y: minY })
+        const p1 = runtime.model.toGlobal({ x: maxX, y: maxY })
+        const color = runtime.canPlay(h.name) ? 0x4fc08d : 0xe05555
+        h.dot.beginFill(color, 0.06)
+        h.dot.drawRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y)
+        h.dot.lineStyle(1, color, 0.8)
+        h.dot.drawRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y)
+        h.dot.endFill()
+        h.dot.beginFill(color, 0.35)
+        h.dot.drawCircle(g.x, g.y, 9)
         h.dot.endFill()
         h.label.position.set(g.x + 12, g.y - 7)
       }

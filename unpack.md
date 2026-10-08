@@ -14,7 +14,8 @@ uv run scripts/extract.py <bundle_path> <out_dir>   # 兼容：显式指定输�
 ```
 
 - 依赖见 `requirements.txt`（UnityPy），`uv pip install -r requirements.txt` 或
-  pip 安装均可；bundle 需先由 `scripts/pull_bundles.py` 拉到 `.tmp/bundles/`
+  pip 安装均可；bundle 的拉取方式见 [azurlane.md](azurlane.md) 第 1 节
+  （落到 `.tmp/bundles/`）
 - `<skin_id>` 为皮肤 id（`_hx` 后缀为改造/婚变体）。不传输出目录时自动落
   `public/models/<角色>/<skin_id>/`（角色名 = skin_id 去掉 `_hx`/`_N` 后缀），
   不存在会自动创建；显式传 `<bundle_path> <out_dir>` 时按传入路径落盘
@@ -29,6 +30,7 @@ uv run scripts/extract.py <bundle_path> <out_dir>   # 兼容：显式指定输�
 ├── <id>.physics3.json    # 物理（TextAsset JSON 原文，无损）
 ├── <id>.char.json        # Live2dChar 交互参数（本项目扩展，见下）
 ├── <id>.interaction.json # 交互状态机数据（本项目扩展，见下）
+├── <id>.l2d.json         # ship_l2d 交互配置（bake_l2d.py 烘焙，本项目扩展，见下）
 ├── <id>.defaults.json    # 参数默认值/min/max（解析自 moc3，见下）
 ├── <id>.inventory.json   # bundle 全量参考：GameObject 表、全部组件 typetree、
 │                         #   AnimationClip 事件与绑定；逆向时先 grep 这里
@@ -53,16 +55,30 @@ bundle 现写探针。产物全部落在模型目录内，目录间互不引用�
 还原使用：
 
 - **`<id>.char.json`**：`Live2dChar` MonoBehaviour 的交互参数（拖拽速率、
-  阻尼、点击响应开关），供拖拽视线跟随等自定义交互使用
-- **`<id>.interaction.json`**：游戏交互状态机的数据还原（机制见
-  [azurlane.md](azurlane.md)），`clips` 下每支含数据的动作记录：
-  - `events`：`AnimationEvent` 列表（`OnAnimEvent`=语音钩子、
-    `OnFinishAnim(N)`=结束状态编号）
-  - `state`：开关型参数（取值贴着 0/1/-1 的图层/道具开关）的
-    `[起播值, 结束值]`。起播值即该动作可达的前置状态，运行时用
-    "当前参数状态 == 起播边界"做点击门控；参数默认值不在 bundle 内（在
-    moc3），运行时用 `coreModel.getParameterDefaultValue` 比对判断
-    "非默认即状态残留"
+  阻尼、点击响应开关），语义与用法见 [azurlane.md](azurlane.md)
+- **`<id>.interaction.json`**：游戏交互状态机的数据还原（状态机机制见
+  [azurlane.md](azurlane.md) 第 3 节，运行时消费方式见 [README](README.md)
+  的"查看器实现"）：
+  - `clips` 下每支含数据的动作记录：
+    - `events`：`AnimationEvent` 列表（`OnAnimEvent` 语音钩子、
+      `OnFinishAnim(N)` 结束状态编号）
+    - `state`：开关型参数（取值贴着 0/1/-1 的图层/道具开关）的
+      `[起播值, 结束值]`。开关型判定有两条：全部采样值贴 0/±1（严格），或
+      首末值贴 0/±1 且全程不越出 moc 量程、量程宽度 ≤1.25（带弹性过冲的
+      开关，如 uicaidan 量程 [0,1.1]——这类曲线若漏收，运行时复位会把摊开的
+      菜单 UI 抹掉）
+  - `animator` 节：AnimatorController 路由表，解析 `m_Controller` 序列化
+    blob 所得——`paramKinds`：条件参数名哈希 → `"int"` / `"trigger"`（主
+    int 即动作编号 ActionId，次 int 为 idle 变体号）；`states`：全部状态按
+    ActionId 排序，每项 `{name, actionId, subIndex, clip}`，`clip` 为空的
+    状态是空跳板。ActionId 取值域与门控机制见 [azurlane.md](azurlane.md)
+- **`<id>.l2d.json`**：游戏 Lua 配置 `pg.ship_l2d` 的交互配置（不是 bundle
+  产物，由 `bake_l2d.py` 从 `.tmp/lua/` 快照烘焙进模型目录，来历见
+  [azurlane.md](azurlane.md) 第 3 节；`parse_ship_l2d.py` 可人工查验）：
+  `skin_id`（数字皮肤 id）、`entries`（该皮肤的 ship_l2d 条目，按游戏注册
+  顺序，字段原样保留）、`idle_index`（idle 变体号 → 动作 clip 名映射，取自
+  interaction.json 的 `animator.states`）。运行时消费方式见
+  `src/utils/dragmachine.js` 头注与 [README](README.md) 的"查看器实现"
 
 ## 转换原理
 
@@ -72,6 +88,7 @@ bundle 现写探针。产物全部落在模型目录内，目录间互不引用�
 | 贴图       | ASTC 格式 Texture2D                   | UnityPy `.image` 转码为 PNG                                                                                     |
 | 物理       | TextAsset `*.physics3`                | JSON 原文直接落盘                                                                                               |
 | 交互参数   | `Live2dChar` MonoBehaviour            | 过滤 `m_` 前缀字段后存 `char.json`                                                                              |
+| 动作路由   | `AnimatorController` 序列化 blob      | 解析参数与 AnyState 转移 → `interaction.json` 的 `animator` 节（见上）                                          |
 | 动画       | Unity AnimationClip（muscle-clip）    | 曲线解码后转 motion3.json，见下                                                                                 |
 | 参数默认值 | moc3 二进制                           | 解析头部节偏移表，见下                                                                                          |
 | 全量参考   | bundle 全部对象                       | GameObject 表 + 组件 typetree + clip 事件/绑定 → `inventory.json`（`CubismMoc._bytes` 除外，避免与 .moc3 重复） |
@@ -113,11 +130,12 @@ Transform 层级，对每条 GameObject 路径（相对 Animator 根，不含根
 
 ## 已知限制与注意
 
+- 交互配置（分区→动作/拖拽参数机）不在 bundle 内，来自游戏 Lua 配置快照
+  `.tmp/lua/`，解析用 `python -I scripts/parse_ship_l2d.py <皮肤id>`（或
+  `uv run python -I …`），烘焙进模型目录用 `python -I scripts/bake_l2d.py
+  <painting名>`；来历与文件清单见 [azurlane.md](azurlane.md) 第 3 节
 - 解码部分从 UnityPy 1.9.28 的 `AnimationClip.py` 摘取（MIT），其余版本未验证
 - 个别曲线的路径哈希在 Transform 层级中找不到对应（bundle 内本就无法解析的
   数据），另有若干无采样数据的空 Opacity 绑定；提取时打印 `[warn]` 并跳过，
   不影响其余曲线
-- 动作文件名即 Unity AnimationClip 名；pixi-live2d-display 默认找 `Idle` 组
-  （首字母大写），加载时需传 `idleMotionGroup: 'idle'`
-- 关闭 autoInteract 时，点击命中后需手动调用 `model.tap()` 播放对应动作
 - 口型（CRI 语音驱动）与 CV 音频不在本脚本提取范围内
