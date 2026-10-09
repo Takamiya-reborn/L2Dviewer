@@ -94,23 +94,47 @@ idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
   参数（`parameter`），按下命中分区即激活（`startDrag`），拖动时
   `offset = target + (指针-按下点)/offset_x|y`（offset = 拖动 1 单位参数的
   像素数），目标值经 `drag_direct`（1=负向钳 0 / 2=正向钳 0）、`range_abs`
-  （取绝对值）、`range`（钳制）修正，`smooth`/1000 秒平滑趋近（差 <0.05 贴合）；
+  （取绝对值）、`range`（钳制）修正，`smooth`/1000 秒平滑趋近（差 <0.05 贴合；
+  `live2dextend.lua` 的 `CustomSmoothValue` 即线性插值 `from + (to-from)·p/d`，
+  非缓动/阻尼，p 每帧累加 dt 直至 d）；
   松手时 `parts_data.parts` 吸附最近档位，`revert`/1000 秒后回 `start_value`
   （-1 = 不回弹且持久化，`save_parameter=-1` 除外），`revert_smooth` 是回弹时长
 - 触发 `action_trigger.type`：1=按住 num 附近达 time 秒、2=点击（|dx|<30px
   且 <0.5s，松手后 0.1s 确认；`action` 可为随机数组）、3=按住 time 秒
   （action_list 顺序播，`last` 松手收尾）、4=xy 双参联动、5=idle 常量跟随、
-  6=连点循环 action_list、7=监听外部事件、8=按住充能（delta 秒/单位）、
-  9=点击时他参贴近 num、10=当前动画过 trigger_rate 时链触发、11=点击时本参
-  在 range 内、12=扩展规则、13=跟随他参变动、14=区间上下行触发、15/16=下棋
-  小游戏。`circle`+`target`：触发把参数设到 target，已在 target 则回
-  start_value（图层 0↔1 切换）；`focus=1` 按下即触发；`target_focus=1`
-  参数跳变；`limit_time`（默认 4s）是触发冷却
+  6=连点循环 action_list（与 2 共用点击判定，见下）、7=监听外部事件、
+  8=按住充能（delta 秒/单位）、9=点击时他参贴近 num、10=当前动画过
+  trigger_rate 时链触发、11=点击时本参在 range 内、12=扩展规则、13=跟随
+  他参变动、14=区间上下行触发、15/16=下棋小游戏。`circle`+`target`：触发把
+  参数设到 target，已在 target 则回 start_value（图层 0↔1 切换）；
+  `focus=1` 按下即触发；`target_focus=1` 参数跳变；`limit_time`（默认 4s）
+  是触发冷却
+- **点击触发的 apply 分支顺序**（`onEventCallback(EVENT_ACTION_APPLY)` 的
+  机器侧构造块，type 2/6 共用）：按 `action` / `action_list` / 两者皆无
+  三分支取本次 action 与 activeData——`action_list` 分支取
+  `action_list[actionListIndex]`（连点下标，1 起），**取完即推进、末位回卷
+  到 1**（推进发生在重复 idle 豁免之前，被豁免跳过的触发同样消耗一次下标）；
+  `action_list` 有值时仅 action 非空才 `triggerAction()`，两者皆无（纯
+  circle/target 开关机）则 `triggerAction()` 后立即清单触发标记。之后才是
+  重复 idle 豁免 → circle/target 落账 → focus 清标记 → 发事件播放
+- **触发冷却的塌缩**：`onListenerTrigger` 收到 `ON_ACTION_PLAY`（Lua 层动作
+  真正播出，仅 apply 处理器发，idle 循环重启不算）时对**全部机器**无条件
+  覆写 `nextTriggerTime = min(limitTime, 0.2)`——即 `limit_time` 的足额冷却
+  只在不产出动作播放的场合生效（重复 idle 豁免、播放失败、纯开关机）；
+  只要触发出了动作，冷却当场塌缩回 0.2s
+- **连点下标持久化**：type 6 在 `saveData`（每次 `stopDrag`）写
+  `SetDragActionIndex`，`loadData` 恢复。落盘时机在松手、下标推进在松手后
+  0.1s 的确认触发里——存档恒滞后一轮，读档重进会重播"上次点的那下"而非
+  接着推进，是游戏原行为
 - 触发成功后应用 `action_trigger_active`：`enable`/`ignore` 是之后的动作
   白名单/黑名单（**对一切动作播放生效**，含系统面板触发；空数组 = 清空），
   `idle`（数字或数组）切换待机变体——即 Animator SetInteger("idle")，
   触发即设、播完落 idle 态时生效；重复 idle 且未开 `repeat_flag` 时整个
-  触发跳过。机器按下期间（`EVENT_ACTION_ABLE`）一切动作播放被临时屏蔽
+  触发跳过。机器按下期间（`EVENT_ACTION_ABLE`，ableFlag=true 时把播放白名单
+  换成 `{"none action apply"}`）一切动作播放被临时屏蔽——例外是 type 3 长按
+  触发瞬间先 `setAbleWithFlag(false)` 再 apply 再置回：按住期间自发触发的动作
+  要过 checkEnablePlay，靠这扇临时窗播出（wuzang_3 的充能姿势 touch_drag2
+  即此路径，移植漏掉它则充能动画永远不播）
 - 机器参数以 `AddParameterValue(parameter, start_value, mode)` 注册为叠加
   来源：mode 1=Override / 2=Additive / 3=Multiply，逐帧覆盖在动作求值结果
   之上（模型里不存在该参数时机器只记账不写值）
@@ -120,6 +144,42 @@ idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
 - 待机变体号 → 动作 clip 的对应只在 Animator 路由表里（extract.py 产出的
   interaction.json `animator.states`：actionId=1 的 subIndex 即变体号），
   bake_l2d.py 据此生成 `idle_index` 映射表供运行时查表
+- **组名动作 = 子状态路由，非随机**：action/名单里写 `idle` 这类组名时，游戏
+  喂给 Animator 的是当前变体所在的子状态（`SetInteger("idle")` 后播当前变体
+  clip），不是随机挑一支；其余组名（main_1 等）播同名 clip。bake 产物里
+  idle 组成员顺序与变体号无关（如 wuzang_3 组内下标 0 是 idle4），按下标
+  随机会错播其他摆位（摆位判定框随之入画，表现为"挂载即巨大判定框"）
+- **取景语义**（`view/ship/live2dpainting.lua`）：没有 ROI/内容拟合——模型根
+  节点即画布原点（canvasinfo CanvasOrigin），根缩放恒 `live2d_offset[4]` 或
+  默认 `Vector3(52,52,52)`（全皮肤一致），`localPosition = live2d_offset`
+  （母港 UI 点，y 向上，`sharecfgdata/ship_skin_template.lua` 逐皮肤给出），
+  相机固定。等价到查看器（本地 px，y 向下，与 pixi-live2d-display
+  getDrawableVertices 的换算同源：`x_local = k·PPU + W/2`、
+  `y_local = −k·PPU + H/2`，k 为 core 单位制坐标）：视口中心对应模型点
+  k = −offset/52，可见画布高 = 母港设计高 750pt ÷ (52/PPU) ≈ 3037px 恒定。
+  `live2d_offset` 由 bake_l2d.py 烘进 l2d.json，L2dStage.fitModel 按此取景，
+  无配置时退回旧的 measureScene ROI 拟合
+
+**C# 侧语义**（dump.cs + 定点小窗口反汇编证实，获取途径见第 4 节）：
+
+- **命中检测 `Live2dChar.GetDragPart()`**：`camera.ScreenPointToRay(Input.mousePosition)`
+  → `CubismRaycaster.Raycast` 全量命中 → 对每个命中 drawable 名取
+  `Array.IndexOf(DragParts, name)`，**最大下标者赢**，返回 下标+1（0 = 无命中）。
+  `DragParts` = assistantTouchParts + 各机器分区按 ship_l2d_id 注册顺序追加
+  （去重），即**重叠分区里注册越晚的优先**（如 fulici_2 的 TouchIdle7/8/9 注册在
+  TouchDrag7 之后，重叠区域按下认 idle 分区）。赢家只是**分区名**：Lua 侧
+  `onPointDown`（live2d.lua）遍历全部机器、`drawAbleName` 等于赢家分区的
+  **逐台 startDrag**，松手 `stopDrag` 广播给全部机器——多台机器共用同一
+  分区是有意设计，按下时协同激活（wuzang_3 的 TouchDrag2 挂充能 + 双
+  relation 联动 + type 3 长按共 4 台；shengluyisi_5 的 TouchIdle1 挂 6 台
+  收尾机同理）。~~旧记录"只有注册最早那台可经命中到达"系误读，已证伪~~
+- **参数叠加层**：`AddParameterValue`/`ChangeParameterData` 只维护
+  `_CustomParameterDic`（每参数一条 `{value, blendMode}`），`LateUpdate` 每帧
+  对每条调 `CubismParameterExtension.SetParameterValue(param, value, weight=1,
+blendMode)` 落到模型参数——Override/Additive/Multiply 与 Cubism 枚举语义
+  一致；**未注册参数的 `ChangeParameterData` 是静默 no-op**
+- **坐标**：游戏用 `Input.mousePosition`（Unity 屏幕坐标，y 向上），Web 移植
+  （浏览器 y 向下）时拖拽量的 y 分量须取反，否则 `offset_y` 型机器方向颠倒
 
 **游戏 Lua 的来历**：github.com/AzurLaneTools/AzurLaneLuaScripts（社区自动
 解密发布的明文游戏脚本）。用到的文件由 `scripts/pull_lua.py`
@@ -129,16 +189,21 @@ idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
 gitignore，不入库）：`sharecfg/ship_l2d.lua`（交互配置）、
 `sharecfgdata/ship_skin_template.lua`（painting 名 → 皮肤 id 映射）、
 `view/ship/live2d*.lua` 与 `mgr/live2dmgr.lua`（控制层，字段语义的参照，
-本节"控制层语义"即通读这三个文件得出）。
-上游仓库停更不影响已有快照；C# 侧语义参考由 Il2CppDumper 的 dump 产物提供
-（工具来历见下）。
+本节"控制层语义"即通读这批文件得出；必需文件默认拉取，控制层用 `--all`）。
+上游仓库停更不影响已有快照。
+**C# 侧语义**由 `scripts/pull_cs.py` 提供：adb 拉游戏 APK（`pm path` 找包）→
+解 zip 取 `libil2cpp.so`（arm64 优先）+ `global-metadata.dat` → 调
+Il2CppDumper 出 dump.cs（落 `.tmp/cs/dump/`）；方法体的语义核对用
+`scripts/disasm_window.py` 对指定 Offset 做**定点小窗口**反汇编（ARM64），
+勿全量扫描
 
 以上数据由 `extract.py` 提取为 `<id>.interaction.json`，字段语义见
 [unpack.md](unpack.md)。
 
 ## 4. 环境与工具约定
 
-- Python：依赖见 `requirements.txt`（UnityPy）；提取脚本在 `scripts/`，
+- Python：依赖见 `requirements.txt`（UnityPy、Capstone）；可使用 uv、
+  venv/virtualenv 或全局 Python，反汇编命令见上文；提取脚本在 `scripts/`，
   `tools/` 放随仓库分发的第三方工具
 - Node：mise 管理（`mise.toml`）
 - `tools/`（入库，许可证见 README 版权说明）：
@@ -151,3 +216,6 @@ gitignore，不入库）：`sharecfg/ship_l2d.lua`（交互配置）、
     的明文游戏 Lua 子集（按服务器分子目录），由 `pull_lua.py` 拉取（文件清单见
     第 3 节；`extract.py` 本身不依赖它，仅 `parse_ship_l2d.py` 解析交互配置用，
     读取路径同为 `.tmp/lua/<服务器>/`，两端硬编码对齐，勿改其一）
+  - `.tmp/cs/` — `pull_cs.py` 的产物：设备拉回的 APK（`apk/`）、
+    `libil2cpp.so` + `global-metadata.dat`、Il2CppDumper 输出（`dump/dump.cs`
+    等）；语义核对配 `disasm_window.py`（第 3 节"C# 侧语义"）

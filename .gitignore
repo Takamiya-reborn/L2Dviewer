@@ -13,8 +13,8 @@ dist-ssr
 *.local
 
 # 模型文件不入库，仅保留目录占位
-public/models/*
-!public/models/.gitkeep
+models/*
+!models/.gitkeep
 
 # 提取管线临时产物（bundle 拉取、社区解密 Lua 快照、venv 等）
 .tmp

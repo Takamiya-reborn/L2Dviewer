@@ -9,6 +9,9 @@
  * 游戏不在动作间复位参数，状态机参数的值跨动作持续，"点击摊开菜单 ->
  * 分支 -> 收尾"的状态机就建立在参数连续性上：
  * - 跨动作保留：touch_idle1 播完后 caidan=1（菜单摊开）持续到分支播完；
+ *   连续摆位同理（touch_idle1 摊开菜单时 All_X=2.34 场景右移，idle1 变体
+ *   不复写该参数，位移持续到收尾分支带回 0）——extract.py 把这类参数落盘
+ *   在 clips[*].carry，与开关参数（state）一起进节点、复位时豁免；
  * - 点击门控：起播值=1 的开关是前置状态（动作依赖该图层/道具已摊开，
  *   touch_idle2/4/6/8 以 caidan=1 起播，仅菜单摊开时是合法分支）。
  *
@@ -48,20 +51,28 @@ export class InteractionRuntime {
         .filter(([, [start]]) => start !== 0)
         .map(([pid]) => pid),
     )
+    // 连续摆位参数（carry）：菜单摊开时的场景位移（All_X）等——同样跨动作
+    // 持续、同样不许被复位抹掉，但取值连续、只做保留不做门控（起播值=1 的
+    // 前置约束只对开关参数成立，姿态参数凑巧取 1 不构成状态前置）
+    this.carryPids = new Set(
+      Object.values(clips).flatMap((c) => Object.keys(c.carry ?? {})),
+    )
+    // 复位豁免全集 = 开关 + 连续摆位
+    this.preservePids = new Set([...this.statePids, ...this.carryPids])
     const core = model.internalModel.coreModel
     this.preserveIdx = new Set(
-      [...this.statePids]
+      [...this.preservePids]
         .map((pid) => core.getParameterIndex(pid))
         .filter((i) => i >= 0 && i < core.getParameterCount()),
     )
 
     // ---- 有向图节点跟踪 ----
-    // 节点 = statePids 的值向量，初值取 moc 默认（模型加载即干净默认姿态）。
+    // 节点 = preservePids 的值向量，初值取 moc 默认（模型加载即干净默认姿态）。
     // pending 是"已起播但转移未落实"的 clip：motionFinish 结算它；被下一支
     // 动作顶掉时由 trackMotionStart 先行结算（结束值为绝对值，幂等）。
     this.eps = 0.05
     this.node = new Map(
-      [...this.statePids].map((pid) => [pid, this.paramDefault(pid)]),
+      [...this.preservePids].map((pid) => [pid, this.paramDefault(pid)]),
     )
     // 门控前置集：起播值=1 且该值可产出（某动作结束值=1，或 moc 默认=1）。
     // 起播值 0/-1 是 t0 硬设（消隐/复位/表情预设），不构成前置——全参数严格
@@ -115,11 +126,16 @@ export class InteractionRuntime {
     return (def?.File ?? '').split('/').pop()?.replace(/\.motion3\.json$/, '') || null
   }
 
-  /** 起播：先结算被顶掉的挂起动作，再挂起新动作 */
+  /** 起播：先结算被顶掉的挂起动作，再挂起新动作。idle 变体是循环动作、
+      永不 motionFinish，它的开关状态（微笑眼等 idle 姿态预设）在起播瞬间
+      即生效并持续整个循环——立即落账进节点，否则变体循环期间节点缺这份
+      状态，依赖它的分支（如 touch_idle14 要求 ParamEyeLSmile=1）会被门控
+      与 HUD 误判成不可达（游戏里参数由曲线实时驱动，起播即为此值） */
   trackMotionStart(group, index) {
     if (this.pending) this.applyEnd(this.pending)
     this.pending = this.clipOf(group, index)
     this.pendingIdle = group === this.idleGroup
+    if (this.pendingIdle && this.pending) this.applyEnd(this.pending)
   }
 
   /** 播完：落实挂起动作的转移（游戏 OnFinishAnim 的上报时机） */
@@ -129,14 +145,18 @@ export class InteractionRuntime {
     this.pendingIdle = false
   }
 
-  /** 把 clip 的结束值写进节点——有向图中沿这条边走一步。只写节点域内
-      （statePids）的参数：end-only 参数（起播恒 0，如 sdrtx）由
-      resetParameters 的常规复位管理，写入节点会让它永久残留 */
+  /** 把 clip 的结束值写进节点——有向图中沿这条边走一步。开关参数只写节点域
+      内（statePids）的：end-only 参数（起播恒 0，如 sdrtx）由 resetParameters
+      的常规复位管理，写入节点会让它永久残留。连续摆位参数（carryPids）同样
+      按结束值落账——收尾分支带回 0 的也写，节点随之清零 */
   applyEnd(clipName) {
-    const state = this.interaction?.clips?.[clipName]?.state
-    if (!state) return
-    for (const [pid, [, end]] of Object.entries(state)) {
+    const clip = this.interaction?.clips?.[clipName]
+    if (!clip) return
+    for (const [pid, [, end]] of Object.entries(clip.state ?? {})) {
       if (this.statePids.has(pid)) this.node.set(pid, end)
+    }
+    for (const [pid, [, end]] of Object.entries(clip.carry ?? {})) {
+      if (this.carryPids.has(pid)) this.node.set(pid, end)
     }
   }
 
@@ -144,15 +164,18 @@ export class InteractionRuntime {
       回 moc 默认。配合拖拽参数机编排器的 resetAll 一起调 */
   resetState() {
     this.node = new Map(
-      [...this.statePids].map((pid) => [pid, this.paramDefault(pid)]),
+      [...this.preservePids].map((pid) => [pid, this.paramDefault(pid)]),
     )
     this.pending = null
     this.pendingIdle = false
   }
 
-  /** 中性节点：全部状态参数都贴着 moc 默认值（无任何跨动作残留） */
+  /** 中性节点：全部开关状态参数都贴着 moc 默认值（无任何跨动作残留）。
+      只查开关参数：连续摆位（姿态/位移）几乎总被某支动作残留，参与判定
+      会让"分支挂起"永不解除、idle 永不回落 */
   isNeutral() {
-    for (const [pid, value] of this.node) {
+    for (const pid of this.statePids) {
+      const value = this.node.get(pid) ?? 0
       if (Math.abs(value - this.paramDefault(pid)) > this.eps) return false
     }
     return true
@@ -263,19 +286,49 @@ export class InteractionRuntime {
 
 /**
  * 交互点可视化提示（测试用）：每个命中区一个半透明圆点标在其 drawable
- * 网格中心，外加网格包围盒轮廓（isHit 的实际判定范围）——绿 = 可点
- * （起播门控通过）、红 = 被门控挡下、隐藏网格（如菜单收起时的菜单项）
- * 不显示；位置每帧跟随模型。
+ * 网格中心，外加网格包围盒轮廓（isHit 的实际判定范围）——绿 = 可交互、
+ * 红 = 被挡下、橙 = 游戏配置了触发但查看器未实现该触发类型、隐藏网格
+ * （如菜单收起时的菜单项）不显示；位置每帧跟随模型。
+ *
+ * 红绿判定按真实路由分家：机器分区（ship_l2d 有 draw_able_name 匹配）由
+ * 拖拽参数机接管，不查 interaction.json 的参数门控——颜色按机器自身的
+ * 可触发条件（冷却/单触发/播放中/重复 idle 豁免，取编排器路由到的那台，
+ * 与游戏 GetDragPart 的"注册顺序第一台赢"一致）判定；无机器的分区
+ * （touch_head/body 等 C# 路径）才按起播门控（canPlay）判定。两种判据
+ * 混用会把"机器照样能拖"的分区画红、"未实现触发类型/冷却中"的分区画绿。
+ *
+ * 标签显示分区驱动的参数（编排器 l2d.json 的 draw_able_name -> parameter），
+ * 不用网格自己的名字：部分皮肤的网格名与反应编号是错位的（shengluyisi_5:
+ * TouchDrag23 网格驱动 touch_drag25、TouchDrag25 驱动 touch_drag29——
+ * 游戏 sharecfg ship_l2d 原始数据即如此），按网格名标注会把 drag25 的
+ * 范围/中心画到 TouchDrag25 网格上，与游戏内实际触发位置对不上。多个
+ * 机器共用同一分区时参数用 "+" 连接；无机器的分区（摸头/普通触摸等）
+ * 沿用网格名。
  *
  * @param app pixi Application（提示层挂到其 stage）
  * @param getRuntime () => InteractionRuntime | null，每帧取当前运行时
  * @param getVisible () => boolean，提示层开关
+ * @param getOrch () => DragOrchestrator | null，拖拽参数机编排器
  * @returns {{ rebuild(model): void, destroy(): void, update(): string }}
  *   update 每帧调用，返回 HUD 文本（状态机参数实时值，供测试对照）
  */
-export function createInteractionHints(app, getRuntime, getVisible) {
+export function createInteractionHints(app, getRuntime, getVisible, getOrch = null) {
   let layer = null
   let hints = []
+
+  /** 分区名（hitArea Name，如 touch_drag23）-> 驱动参数名（如 touch_drag25）。
+      归一化规则与 DragOrchestrator.machineByZone 一致（剔大小写与分隔符）；
+      无机器覆盖时返回 null，调用方回落到网格名 */
+  function zoneParams(orch, zoneName) {
+    if (!orch?.machines?.length) return null
+    const key = String(zoneName).toLowerCase().replace(/[^a-z0-9]/g, '')
+    const found = []
+    for (const m of orch.machines) {
+      if (String(m.drawAbleName).toLowerCase().replace(/[^a-z0-9]/g, '') !== key) continue
+      if (!found.includes(m.parameterName)) found.push(m.parameterName)
+    }
+    return found.length ? found.join('+') : null
+  }
 
   return {
     rebuild(model) {
@@ -320,6 +373,10 @@ export function createInteractionHints(app, getRuntime, getVisible) {
           h.dot.visible = h.label.visible = false
           continue
         }
+        // 标签 = 分区驱动的参数（见函数注释）。逐帧解析：编排器随模型热切换
+        const orch = getOrch?.()
+        const params = zoneParams(orch, h.name)
+        if (params && h.label.text !== params) h.label.text = params
         const verts = runtime.model.internalModel.getDrawableVertices(h.idx)
         let minX = Infinity
         let minY = Infinity
@@ -346,7 +403,17 @@ export function createInteractionHints(app, getRuntime, getVisible) {
         // 矩形的精确包含测试，画出实际覆盖范围，对照松手位置排查命中落空
         const p0 = runtime.model.toGlobal({ x: minX, y: minY })
         const p1 = runtime.model.toGlobal({ x: maxX, y: maxY })
-        const color = runtime.canPlay(h.name) ? 0x4fc08d : 0xe05555
+        // 颜色按真实路由判定（见函数注释）：机器分区看参数机的可触发条件
+        // （同名多机时任意一台可响应即绿），其余分区看 interaction.json 的
+        // 起播门控；橙 = 触发类型未实现
+        const hasMachine = params && orch?.machinesForZone(h.name).length
+        const state = params ? orch?.zoneInteractable(h.name) : null
+        const color =
+          state === true || (!hasMachine && runtime.canPlay(h.name))
+            ? 0x4fc08d
+            : state === null
+              ? 0xe0a03c
+              : 0xe05555
         h.dot.beginFill(color, 0.06)
         h.dot.drawRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y)
         h.dot.lineStyle(1, color, 0.8)
@@ -359,6 +426,15 @@ export function createInteractionHints(app, getRuntime, getVisible) {
       }
       const parts = [...runtime.statePids].map(
         (pid) => `${pid}=${Math.round(runtime.paramValue(pid))}`,
+      )
+      // 连续摆位只报节点里的非默认残留（实时值被逐帧曲线扰动，不适合读数）
+      const carried = [...runtime.carryPids].filter(
+        (pid) =>
+          Math.abs((runtime.node.get(pid) ?? 0) - runtime.paramDefault(pid)) >
+          runtime.eps,
+      )
+      parts.push(
+        ...carried.map((pid) => `${pid}=${runtime.node.get(pid)}`),
       )
       return parts.join('  ')
     },

@@ -1,11 +1,26 @@
+import { reactive } from 'vue'
+
 /**
- * 模型清单由 vite.config.js 的 modelsManifest 插件在启动/构建时扫描
- * public/models 生成，无需手工维护；新增皮肤重启 dev 即可生效。
+ * 皮肤清单由 dev server 每次请求实时扫描仓库根目录 models/ 生成
+ * （vite.config.js 的 serveModels 中间件），main.js 挂载前经 loadModels()
+ * 拉取填充（reactive 数组，视图直接可用）。
+ * 新增皮肤：目录丢进 models/ 后刷新页面即生效，无需重启 dev。
  * id    -> 唯一标识（用于标签选中态）
  * name  -> 侧栏标签显示名
- * url   -> model3.json 路径（public 目录下）
+ * url   -> model3.json 路径（dev server 把 /models/* 映射到根目录 models/）
  */
-export { MODELS } from 'virtual:models'
+export const MODELS = reactive([])
+
+/** 拉取皮肤清单；失败时仅报错，视图以空清单渲染。 */
+export async function loadModels() {
+  try {
+    const r = await fetch('/models/manifest.json')
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    MODELS.push(...(await r.json()))
+  } catch (err) {
+    console.error('皮肤清单加载失败：请确认 models/ 下存在 <角色>/<皮肤>/<皮肤>.model3.json', err)
+  }
+}
 
 /**
  * 动作组显示名，对齐游戏内起居栏 L2D 界面的叫法；未收录的组在面板里
@@ -16,6 +31,7 @@ export const TRIGGER_LABELS = {
   main_2: '主界面2',
   main_3: '主界面3',
   main_4: '主界面4',
+  main_5: '主界面5',
   touch_body: '普通触摸',
   touch_special: '特殊触摸',
   touch_head: '摸头',
@@ -39,6 +55,7 @@ export const TRIGGER_ORDER = [
   'main_2',
   'main_3',
   'main_4',
+  'main_5',
   'touch_body',
   'touch_special',
   'touch_head',

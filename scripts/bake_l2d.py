@@ -9,6 +9,8 @@
 产物 <id>.l2d.json 落在模型目录内（与 interaction.json 等扩展文件同惯例，
 目录自包含），内容:
     skin_id     数字皮肤 id
+    name        游戏内皮肤名（ship_skin_template.name，查看器侧栏显示名）
+    ship_group  舰船组 id（皮肤所属角色的 ship_group）
     entries     该皮肤的 ship_l2d 条目列表（顺序 = 游戏配置的 ship_l2d_id
                 列表，即控制层的机器注册顺序），字段原样保留——未在本查看器
                 实现的触发类型也全部带上，供后续扩展直接使用
@@ -112,7 +114,7 @@ def main():
     ap.add_argument(
         "--out",
         default=None,
-        help="模型目录（默认 public/models/<角色>/<painting名>/）",
+        help="模型目录（默认 models/<角色>/<painting名>/）",
     )
     args = ap.parse_args()
 
@@ -141,11 +143,19 @@ def main():
     out_dir = (
         Path(args.out)
         if args.out
-        else ROOT / "public/models" / char_dir_of(painting) / painting
+        else ROOT / "models" / char_dir_of(painting) / painting
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     product = {
         "skin_id": skin_id,
+        # 游戏内皮肤名（ship_skin_template.name）与舰船组 id，查看器侧栏
+        # 显示名取 name；ship_group 留作按角色聚合/查角色名用
+        "name": entry.get("name"),
+        "ship_group": entry.get("ship_group"),
+        # 母港摆位（live2dpainting.lua）：模型根节点=画布原点、恒定缩放 52，
+        # localPosition = live2d_offset（UI 点，y 向上）。查看器按此复现取景，
+        # 4 元素时 [3] 覆盖默认缩放
+        "live2d_offset": entry.get("live2d_offset"),
         "idle_index": build_idle_index(out_dir),
         "entries": entries,
     }

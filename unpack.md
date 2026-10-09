@@ -17,7 +17,7 @@ uv run scripts/extract.py <bundle_path> <out_dir>   # 兼容：显式指定输�
   pip 安装均可；bundle 的拉取方式见 [azurlane.md](azurlane.md) 第 1 节
   （落到 `.tmp/bundles/`）
 - `<skin_id>` 为皮肤 id（`_hx` 后缀为改造/婚变体）。不传输出目录时自动落
-  `public/models/<角色>/<skin_id>/`（角色名 = skin_id 去掉 `_hx`/`_N` 后缀），
+  `models/<角色>/<skin_id>/`（角色名 = skin_id 去掉 `_hx`/`_N` 后缀），
   不存在会自动创建；显式传 `<bundle_path> <out_dir>` 时按传入路径落盘
 - 产物命名一律取 bundle 文件名（去扩展名）为模型 id，与目录名无关
 

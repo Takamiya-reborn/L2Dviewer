@@ -1,48 +1,75 @@
-import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { extname, join, resolve, sep } from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite'
 
+const MIME = {
+  '.json': 'application/json',
+  '.moc3': 'application/octet-stream',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+}
+
 /**
- * 扫描 public/models/<角色>/<皮肤>/<皮肤>.model3.json，自动生成皮肤清单。
- * id 与显示名都取皮肤目录名，新增皮肤只需把目录丢进 public/models 重启 dev。
+ * 扫描 models/<角色>/<皮肤>/<皮肤>.model3.json，生成皮肤清单。
+ * 显示名取 <皮肤>.l2d.json 的 name（bake_l2d.py 烘焙的游戏内皮肤名），
+ * 没有烘焙文件的皮肤回退目录名。新增皮肤把目录丢进 models/ 刷新页面即生效。
  */
-function modelsManifest() {
-  const VIRTUAL = 'virtual:models'
-  const modelsDir = join(import.meta.dirname, 'public/models')
-
-  function scan() {
-    const models = []
-    for (const char of readdirSync(modelsDir, { withFileTypes: true })) {
-      if (!char.isDirectory()) continue
-      for (const skin of readdirSync(join(modelsDir, char.name), { withFileTypes: true })) {
-        const id = skin.name
-        if (!skin.isDirectory()) continue
-        if (!existsSync(join(modelsDir, char.name, id, `${id}.model3.json`))) continue
-        models.push({ id, name: id, url: `/models/${char.name}/${id}/${id}.model3.json` })
-      }
+function scanModels(modelsDir) {
+  const models = []
+  for (const char of existsSync(modelsDir) ? readdirSync(modelsDir, { withFileTypes: true }) : []) {
+    if (!char.isDirectory()) continue
+    for (const skin of readdirSync(join(modelsDir, char.name), { withFileTypes: true })) {
+      const id = skin.name
+      if (!skin.isDirectory()) continue
+      const dir = join(modelsDir, char.name, id)
+      if (!existsSync(join(dir, `${id}.model3.json`))) continue
+      let name = id
+      try {
+        name = JSON.parse(readFileSync(join(dir, `${id}.l2d.json`), 'utf8')).name || id
+      } catch {} // 烘焙文件缺失/损坏时静默回退目录名
+      models.push({ id, name, url: `/models/${char.name}/${id}/${id}.model3.json` })
     }
-    models.sort((a, b) => a.id.localeCompare(b.id))
-    return models
   }
+  return models.sort((a, b) => a.id.localeCompare(b.id))
+}
 
+/**
+ * 模型放在仓库根目录 models/（游戏资产不入库，也刻意不在 public/ 里）。
+ * dev server 用这个中间件把 /models/* 映射过去：manifest.json 每次请求实时
+ * 扫描目录生成，其余文件按静态资源直接读盘——不参与构建，也没有清单文件。
+ */
+function serveModels() {
+  const modelsDir = resolve(import.meta.dirname, 'models')
   return {
-    name: 'models-manifest',
-    resolveId(id) {
-      if (id === VIRTUAL) return '\0' + VIRTUAL
-    },
-    load(id) {
-      if (id === '\0' + VIRTUAL) {
-        return `export const MODELS = ${JSON.stringify(scan(), null, 2)}\n`
-      }
+    name: 'serve-models',
+    configureServer(server) {
+      server.middlewares.use('/models', (req, res, next) => {
+        // 挂载后 req.url 已去掉 /models 前缀；normalize 以 / 开头可吞掉越级 ..
+        const rel = decodeURIComponent(req.url.split('?')[0])
+        if (rel === '/manifest.json') {
+          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Cache-Control', 'no-cache')
+          return res.end(JSON.stringify(scanModels(modelsDir)))
+        }
+        const file = resolve(modelsDir, '.' + join('/', rel))
+        const inside = file === modelsDir || file.startsWith(modelsDir + sep)
+        if (!inside || !existsSync(file) || !statSync(file).isFile()) return next()
+        res.setHeader('Content-Type', MIME[extname(file).toLowerCase()] ?? 'application/octet-stream')
+        createReadStream(file).pipe(res)
+      })
     },
   }
 }
 
 /**
- * 禁止构建：build 会把 public/models 下的游戏资产原样打进 dist/，
- * 产物一旦对外提供即构成资源再分发。本仓库仅限本地开发运行；
- * 确需本地构建调试时显式放行：ALLOW_BUILD=1 npm run build。
+ * 禁止构建：模型文件（根目录 models/）属于游戏资产，虽不会被 build 打进
+ * dist/，但线上也拿不到 /models/*，构建产物没有意义且容易诱导部署再分发。
+ * 本仓库仅限本地开发运行；确需本地构建调试时显式放行：
+ * ALLOW_BUILD=1 npm run build。
  */
 function noBuild() {
   return {
@@ -50,7 +77,7 @@ function noBuild() {
     configResolved(resolved) {
       if (resolved.command === 'build' && process.env.ALLOW_BUILD !== '1') {
         throw new Error(
-          '本项目禁止构建（dist/ 会包含 public/models 下的游戏资产，不得分发）。' +
+          '本项目禁止构建（models/ 下为游戏资产，产物不得分发）。' +
           '如确需本地构建调试，使用 ALLOW_BUILD=1 npm run build，产物仅限本机使用。',
         )
       }
@@ -60,5 +87,5 @@ function noBuild() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue(), modelsManifest(), noBuild()],
+  plugins: [vue(), serveModels(), noBuild()],
 })

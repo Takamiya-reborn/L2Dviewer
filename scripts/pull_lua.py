@@ -55,9 +55,10 @@ def die(msg):
 
 
 def fetch(url, proxy):
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({"http": proxy, "https": proxy}) if proxy else {}
+    handlers = (
+        [urllib.request.ProxyHandler({"http": proxy, "https": proxy})] if proxy else []
     )
+    opener = urllib.request.build_opener(*handlers)
     req = urllib.request.Request(url, headers={"User-Agent": "l2dviewer-pull_lua"})
     with opener.open(req, timeout=60) as r:
         return r.read()

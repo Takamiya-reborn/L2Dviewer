@@ -30,8 +30,13 @@ let runtime = null
 // ship_l2d 配置烘焙出的机器编排器；无配置（未烘焙/非 L2D 皮肤）时保持 null，
 // 全部交互走旧的 playHitMotion 近似路径
 let orch = null
+// 母港摆位（l2d.json 的 live2d_offset，bake_l2d.py 烘焙）：游戏取景用，
+// 无配置时 fitModel 退回 ROI 拟合
+let l2dOffset = null
 let hintsCtl = null
 const showHints = ref(true)
+// 调试信息（状态机 HUD + 点击链路诊断）独立于交互点开关
+const showDebug = ref(true)
 const hudState = ref('')
 // 本次按压是否落在机器分区上（down 时判定，up 时分流）
 let machineConsumed = false
@@ -147,7 +152,17 @@ function onDprChange() {
 }
 
 /**
- * 按真实场景做取景适配：
+ * 按游戏取景适配（live2dpainting.lua 语义，有 live2d_offset 配置时走这条）：
+ * 游戏里模型根节点 = 画布原点（canvasinfo 的 CanvasOrigin，通常画布中心）、
+ * 根缩放恒 52（Unity 端 canvas px→单位是 1/PPU，故模型点 k（单位制）出现在
+ * 世界 offset + k·52 处，offset 即 live2d_offset，y 向上）、相机固定不动。
+ * 等价到查看器（本地 px，y 向下，= pixi 端 getDrawableVertices 的换算）：
+ * - 视口中心对应模型点 k = −offset/52，即
+ *     center = (W/2 − off.x·PPU/52, H/2 + off.y·PPU/52)
+ * - 可见画布高 = 母港设计高 750pt ÷ (52/PPU) ≈ 3037px，全皮肤恒定
+ *   （相机固定 ⇒ 取景比例与皮肤无关；750 是设计分辨率高度）
+ * props.fill 仍作整体缩放系数（默认 1 = 与游戏一致）。
+ * 没有 live2d_offset（未烘焙/非 L2D 皮肤）时退回 measureScene 的 ROI 拟合：
  * - 场景包围盒越出设计画布 ⇒ 模型自带背景板（L2D 房间类皮肤），参照游戏内行为取
  *   cover：铺满视口、裁掉较长方向的多余部分，任何窗口比例下都无黑边；
  * - 内容全部在画布内 ⇒ 站姿角色，保持 contain：撑满较短轴，不裁头脚。
@@ -160,14 +175,33 @@ function onDprChange() {
  * （如 Windows 125% 缩放）会算出偏大 1.25 倍的 scale 且中心点偏移，导致溢出 + 不居中。
  * DPR 只影响渲染密度，不影响布局，因此适配与 resolution 彻底解耦。
  */
+// 母港 UI 设计分辨率高度（pt）；相机固定 ⇒ 决定可见画布高
+const LIVE2D_UI_HEIGHT = 750
+// live2dpainting.lua 的默认根缩放（live2d_offset 无第 4 元素时）
+const LIVE2D_ROOT_SCALE = 52
 function fitModel() {
   if (!model || !app) return
-  const scene = measureScene()
-  if (!scene) return
   const viewW = app.screen.width
   const viewH = app.screen.height
-  const canvasW = model.internalModel.width
-  const canvasH = model.internalModel.height
+  const internal = model.internalModel
+  if (l2dOffset && internal.coreModel?.getModel?.().canvasinfo) {
+    const info = internal.coreModel.getModel().canvasinfo
+    const rootScale = l2dOffset[3] ?? LIVE2D_ROOT_SCALE
+    const pxPerPt = info.PixelsPerUnit / rootScale // 视口 pt -> 模型本地 px
+    const scale = (viewH / (LIVE2D_UI_HEIGHT * pxPerPt)) * props.fill
+    model.scale.set(scale)
+    // 画布原点在本地 (W/2, H/2)——与 pixi 端 getDrawableVertices 的换算同源
+    // （它硬编码 W/2、H/2，不读 canvasinfo 的 CanvasOrigin），勿混用
+    model.position.set(
+      viewW / 2 - (internal.width / 2 - l2dOffset[0] * pxPerPt) * scale,
+      viewH / 2 - (internal.height / 2 + l2dOffset[1] * pxPerPt) * scale,
+    )
+    return
+  }
+  const scene = measureScene()
+  if (!scene) return
+  const canvasW = internal.width
+  const canvasH = internal.height
   const backdrop = scene.width > canvasW + 50 || scene.height > canvasH + 50
   const scale =
     (backdrop
@@ -288,6 +322,7 @@ async function mountModelInner(url) {
   // 首支动作起播若早于数据就绪，模型本来就是干净的默认参数，无需复位）
   runtime = null
   orch = null
+  l2dOffset = null
   model = await Live2DModel.from(url, {
     autoInteract: false,
     idleMotionGroup: 'idle', // 本项目 idle 组为小写（Cubism 默认是 "Idle"）
@@ -315,7 +350,14 @@ async function mountModelInner(url) {
   // idle1），机器分区命中后由编排器接管路由
   const l2dConfig = await loadL2dConfig(url)
   if (l2dConfig) {
+    l2dOffset = l2dConfig.live2d_offset ?? null
     orch = new DragOrchestrator(model, l2dConfig, playLuaAction)
+    // TODO(临时诊断): 触发链关键步（拒按/点击判定/豁免/播放/名单）接进 tap 日志
+    orch.debugHook = (s) => tapLogAppend(s)
+    // 刷新即重置（游戏 ClearLive2dSave 语义：拖拽值回 start_value、idle 归零、
+    // 白名单清空、存档清除）。偏离游戏的持久化恢复语义——查看器定位是交叉
+    // 测试工具，每次加载从干净态起步，避免上轮测试的档位/状态残留串场
+    orch.resetAll()
     runtime.checkEnable = (name) => orch.checkEnablePlay(name)
     const manager = model.internalModel.motionManager
     manager.on('motionStart', (group, index) =>
@@ -323,7 +365,12 @@ async function mountModelInner(url) {
     )
     manager.on('motionFinish', () => orch.noteMotionFinish())
     const core = model.internalModel.coreModel
+    model.internalModel.on('beforeMotionUpdate', () => orch.restoreLayer(core))
     model.internalModel.on('afterMotionUpdate', () => orch.applyLayer(core))
+    // 挂载即落基础 idle（变体 0）：库的 idle 自启虽经 startRandomMotion 补丁按
+    // 当前变体解析，但首帧前 FORCE 抢跑消掉竞态，明确从干净态起步——不然随机
+    // 命中摆位变体（如 wuzang_3 组内下标 0 是 idle4）会把摆位判定框一起摆进来
+    playLuaAction(orch.idleClipFor(0))
   }
   fitModel()
   // drawable 顶点在模型首次 update 时才由核心算出，上面的适配只能拿到陈旧值；
@@ -368,7 +415,18 @@ function playMotion(group) {
   // 门控（与游戏一致，如 login 的起播边界在干净默认态下也不满足）；但状态
   // 转移照常入账——interaction.js 在 motionManager 的 motionStart/motionFinish
   // 上统一跟踪所有动作，无论触发来源。
-  model.motion(group, undefined, MotionPriority.FORCE)
+  model.motion(group, idleGroupIndex(group), MotionPriority.FORCE)
+}
+// 面板触发 idle 组时按当前变体解析（游戏 SetInteger("idle") 播当前变体
+// 子状态，不是随机）；返回组内下标，查不到时 undefined 退回随机
+function idleGroupIndex(group) {
+  if (!orch || group !== runtime?.idleGroup) return undefined
+  const defs = model.internalModel.settings?.motions?.[group] ?? []
+  const want = orch.idleClipFor(orch.idleIndex)
+  const i = defs.findIndex(
+    (d) => (d.File ?? '').split('/').pop()?.replace(/\.motion3\.json$/, '') === want,
+  )
+  return i >= 0 ? i : undefined
 }
 
 /** 重置交互状态（对应游戏内 Live2dConst.ClearLive2dSave 的"重置"入口）：
@@ -394,12 +452,30 @@ function pointerPos(e) {
  * @returns {boolean} 是否真的播了（不存在/被白名单拦下返回 false）
  */
 function playLuaAction(clipName) {
-  if (!orch || !orch.checkEnablePlay(clipName)) return false
+  if (!orch) return false
+  if (!orch.checkEnablePlay(clipName)) {
+    // TODO(临时诊断)
+    orch.debug?.(
+      `${clipName} 被${orch.machineAble ? '机器按压(ableFlag)' : '白/黑名单'}拦下` +
+        `(白名单${orch.enablePlayActions.length}项)`,
+    )
+    return false
+  }
   const motions = model?.internalModel.settings?.motions ?? {}
   let group = null
   let index
   if (motions[clipName]) {
     group = clipName
+    // 组名动作 = 游戏喂 Animator 的子状态路由，不是随机挑选：idle 组播当前
+    // 变体所在的子状态（游戏 SetInteger("idle") 后播当前变体 clip），其余组
+    // 按同名 clip 反查下标（如 main_1 组里的 main_1）。都查不到才退回随机
+    const want =
+      clipName === runtime?.idleGroup ? orch.idleClipFor(orch.idleIndex) : clipName
+    const defs = motions[group] ?? []
+    const i = defs.findIndex(
+      (d) => (d.File ?? '').split('/').pop()?.replace(/\.motion3\.json$/, '') === want,
+    )
+    if (i >= 0) index = i
   } else {
     for (const [g, defs] of Object.entries(motions)) {
       const i = (defs ?? []).findIndex(
@@ -466,7 +542,34 @@ function onPointerDown(e) {
   try {
     const downZone = pickMachineZone(x, y)
     if (downZone) machineConsumed = orch.onDown(downZone, { x, y })
-    tapLogAppend(downZone ? `机器[${downZone}] ` : '未命中分区 ')
+    // TODO(临时诊断): 命中分区但机器未激活 = 反应动作播放中被 ignore_action 拒绝
+    const activated = downZone && orch.machines.some((m) => m._active)
+    tapLogAppend(
+      downZone ? `机器[${downZone}]${activated ? '' : '(未激活:反应播放中?)'} ` : '未命中分区 ',
+    )
+    if (downZone) {
+      // TODO(临时诊断): 命中分区判定框的实时包围盒（模型本地画布 px，
+      // moc3 画布空间，与提示层描边同源）——排查"判定框异常大"用
+      const area = model.internalModel.hitAreas?.[downZone]
+      if (area?.index >= 0) {
+        const verts = model.internalModel.getDrawableVertices(area.index)
+        let x0 = Infinity
+        let y0 = Infinity
+        let x1 = -Infinity
+        let y1 = -Infinity
+        for (let j = 0; j < verts.length; j += 2) {
+          const vx = verts[j]
+          const vy = verts[j + 1]
+          if (vx < x0) x0 = vx
+          if (vx > x1) x1 = vx
+          if (vy < y0) y0 = vy
+          if (vy > y1) y1 = vy
+        }
+        tapLogAppend(
+          `${downZone} 判定框 ${Math.round(x1 - x0)}×${Math.round(y1 - y0)}px @(${Math.round((x0 + x1) / 2)},${Math.round((y0 + y1) / 2)}) `,
+        )
+      }
+    }
   } catch (err) {
     console.error('[l2d] pointerdown 命中判定异常', err)
     tapLogAppend(`判定出错:${err?.message ?? err} `)
@@ -551,8 +654,10 @@ onMounted(async () => {
       console.log('[diag] pixi pointermove 也触发了（pixi 事件管线存活）')
     }
   })
-  // 交互点提示逐帧跟随模型（顶点/透明度/门控状态都在变），HUD 取其返回文本
-  hintsCtl = createInteractionHints(app, () => runtime, () => showHints.value)
+  // 交互点提示逐帧跟随模型（顶点/透明度/门控状态都在变），HUD 取其返回文本；
+  // 末参取编排器：提示标签按 l2d.json 显示分区驱动的参数（网格名与反应
+  // 编号在部分皮肤是错位的，如 shengluyisi_5 的 TouchDrag23 -> touch_drag25）
+  hintsCtl = createInteractionHints(app, () => runtime, () => showHints.value, () => orch)
   app.ticker.add(() => {
     // 拖拽参数机每帧步进（平滑趋近/回弹倒计时/点击确认窗口/触发调度）
     orch?.step(app.ticker.deltaMS / 1000)
@@ -589,14 +694,19 @@ defineExpose({ play: playMotion })
 <template>
   <div class="stage">
     <div ref="canvasHost" class="canvas-host" />
-    <button class="hint-toggle" type="button" @click="showHints = !showHints">
-      {{ showHints ? '隐藏交互点' : '显示交互点' }}
-    </button>
-    <button v-if="orch" class="hint-toggle reset-btn" type="button" @click="resetInteraction">
-      重置交互
-    </button>
-    <p v-if="showHints && hudState" class="hud">{{ hudState }}</p>
-    <p v-if="tapDebug" class="tap-debug">{{ tapDebug }}</p>
+    <div class="stage-toolbar">
+      <button class="hint-toggle" type="button" @click="showHints = !showHints">
+        {{ showHints ? '隐藏交互点' : '显示交互点' }}
+      </button>
+      <button class="hint-toggle" type="button" @click="showDebug = !showDebug">
+        {{ showDebug ? '隐藏调试信息' : '显示调试信息' }}
+      </button>
+      <button v-if="orch" class="hint-toggle" type="button" @click="resetInteraction">
+        重置交互
+      </button>
+    </div>
+    <p v-if="showDebug && hudState" class="hud">{{ hudState }}</p>
+    <p v-if="showDebug && tapDebug" class="tap-debug">{{ tapDebug }}</p>
     <p v-if="status" class="status">{{ status }}</p>
   </div>
 </template>
@@ -629,11 +739,16 @@ defineExpose({ play: playMotion })
   user-select: none;
 }
 
-/* 交互点提示：左下角开关 + 状态机参数 HUD（测试用） */
-.hint-toggle {
+/* 交互点/调试开关：右下角一排 + 状态机参数 HUD（测试用） */
+.stage-toolbar {
   position: absolute;
-  left: 12px;
+  right: 12px;
   bottom: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.hint-toggle {
   padding: 5px 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
@@ -650,14 +765,9 @@ defineExpose({ play: playMotion })
   color: #e8e8ee;
 }
 
-/* 重置按钮排在"隐藏交互点"右侧 */
-.reset-btn {
-  left: 110px;
-}
-
 .hud {
   position: absolute;
-  left: 12px;
+  right: 12px;
   bottom: 44px;
   max-width: 46%;
   color: #9fd9bd;
@@ -672,9 +782,9 @@ defineExpose({ play: playMotion })
   top: 12px;
   left: 12px;
   max-width: 70%;
-  color: #ffd479;
-  font: 500 12px/1.5 ui-monospace, monospace;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  color: #000;
+  font: 700 12px/1.5 system-ui, sans-serif;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
   user-select: none;
   pointer-events: none;
   white-space: pre-wrap;

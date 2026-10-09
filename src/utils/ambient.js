@@ -55,6 +55,9 @@ function sampleCurve(segments, t) {
       const t1 = segments[i + 1]
       const v1 = segments[i + 2]
       if (type === 2 ? t <= t1 : type === 3 ? t < t1 : t <= t1) {
+        // 线性段按段内比例插值（现有三套皮肤的 effect 曲线只用贝塞尔/阶跃段，
+        // 此分支暂无实况覆盖）；阶跃保持旧值；反阶跃取段末值
+        if (type === 0) return t1 === time ? v1 : value + ((v1 - value) * (t - time)) / (t1 - time)
         return type === 3 ? v1 : value
       }
       time = t1
@@ -78,12 +81,37 @@ export async function loadAmbient(modelUrl, settings) {
   const duration = data.Meta?.Duration
   const curves = (data.Curves ?? []).filter((c) => c.Target === 'Parameter')
   if (!duration || !curves.length) return null
+  // 参数绑定（惰性，首次 apply 时解析）：下标 + moc 的 [min, max] 范围
+  let bindings = null
   return {
-    /** seconds 取任意单调时钟；取模后每帧写入，效果与游戏内连播一致 */
+    /** seconds 取任意单调时钟；取模后每帧写入，效果与游戏内连播一致。
+     *  写入前按 moc 的 [min, max] 收敛：游戏端 Unity/Cubism Framework 会把
+     *  参数写入钳制到参数范围，核心层直写不会——部分皮肤的 effect 曲线超程
+     *  （shengluyisi_5 的 Param90/92 曲线达 14.7，参数范围 [0,2]），超程值
+     *  放大形变，且幅度随加载时刻的采样相位（performance.now 取模）变化，
+     *  把 fitModel 的场景测量甩出逐次不同的偏差——自由摆位皮肤表现为
+     *  "每次刷新位置/大小随机"。 */
     apply(coreModel, seconds) {
+      if (!bindings) {
+        bindings = curves
+          .map((curve) => {
+            const index = coreModel.getParameterIndex(curve.Id)
+            if (index < 0 || index >= coreModel.getParameterCount()) return null
+            return {
+              index,
+              segments: curve.Segments,
+              min: coreModel.getParameterMinimumValue(index),
+              max: coreModel.getParameterMaximumValue(index),
+            }
+          })
+          .filter(Boolean)
+      }
       const t = seconds % duration
-      for (const curve of curves) {
-        coreModel.setParameterValueById(curve.Id, sampleCurve(curve.Segments, t))
+      for (const b of bindings) {
+        let value = sampleCurve(b.segments, t)
+        if (value < b.min) value = b.min
+        else if (value > b.max) value = b.max
+        coreModel.setParameterValueByIndex(b.index, value)
       }
     },
   }

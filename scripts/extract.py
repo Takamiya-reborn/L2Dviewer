@@ -38,10 +38,10 @@ from pathlib import Path
 import UnityPy
 
 # 固定路径约定：bundle 由 pull_bundles.py 拉到 .tmp/bundles/<skin_id>，
-# 产物按 public/models/<角色>/<skin_id>/ 归档（前端 models.js 按此路径引用）
+# 产物按 models/<角色>/<skin_id>/ 归档（scan_models.mjs 按此路径生成清单）
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_DIR = ROOT / ".tmp" / "bundles"
-MODEL_ROOT = ROOT / "public" / "models"
+MODEL_ROOT = ROOT / "models"
 
 
 def char_name(model_id: str) -> str:
@@ -420,14 +420,19 @@ def _boundary_switch_like(values: list, rng) -> bool:
     return all(rng["min"] - 0.05 <= v <= rng["max"] + 0.05 for v in values)
 
 
-def clip_boundary_state(clip, path_hash, ranges=None) -> dict:
-    """每支动作的首/末参数值（仅开关型），供还原跨动作交互状态。
+def clip_boundary_state(clip, path_hash, ranges=None) -> tuple[dict, dict]:
+    """每支动作的首/末参数值，供还原跨动作交互状态。返回 (state, carry)：
 
-    游戏不在动作间复位参数：touch_idle1 结束时 caidan=1（菜单摊开）、
-    dianjikyc=1（菜单可点），该状态跨动作持续；touch_idle2/4/7 以
-    caidan=1 起播（菜单摊开时的分支动作）。由此可推出"打开器/分支"
-    的点击门控协议。ranges 是 moc3 参数量程（pid -> min/max），供
-    _boundary_switch_like 识别带过冲的开关曲线；缺省时只走严格判据。
+    - state（开关型）：游戏不在动作间复位参数，touch_idle1 结束时 caidan=1
+      （菜单摊开）、dianjikyc=1（菜单可点），该状态跨动作持续；
+      touch_idle2/4/7 以 caidan=1 起播（菜单摊开时的分支动作）。由此可推出
+      "打开器/分支"的点击门控协议。
+    - carry（连续型）：菜单摊开同时位移整个场景（touch_idle1 结束时
+      All_X=2.34，idle1 变体不复写该参数），位移量是姿态状态的一部分，
+      复位会当场回正。凡首/末值非零的连续参数一律落盘，运行时按"结束值
+      即当前状态"跨动作保留；收尾分支把它带回 0 时同样落盘，节点随之清零。
+      ranges 是 moc3 参数量程（pid -> min/max），供 _boundary_switch_like
+      识别带过冲的开关曲线；缺省时只走严格判据。
     """
     mc = clip.m_MuscleClip
     cd = mc.m_Clip.data
@@ -456,6 +461,7 @@ def clip_boundary_state(clip, path_hash, ranges=None) -> dict:
                 )
 
     state = {}
+    carry = {}
     for i, pts in series.items():
         if i >= len(bindings):
             continue
@@ -465,15 +471,17 @@ def clip_boundary_state(clip, path_hash, ranges=None) -> dict:
         pts.sort()
         values = [v for _, v in pts]
         pid = rel.split("/")[-1]
-        if not (
-            _all_switch_like(values)
-            or _boundary_switch_like(values, ranges.get(pid) if ranges else None)
+        if _all_switch_like(values) or _boundary_switch_like(
+            values, ranges.get(pid) if ranges else None
         ):
-            continue
-        if pts[0][1] == 0.0 and pts[-1][1] == 0.0:
-            continue  # 首末均为 0，不含边界信息
-        state[pid] = [round(pts[0][1], 4), round(pts[-1][1], 4)]
-    return state
+            if pts[0][1] == 0.0 and pts[-1][1] == 0.0:
+                continue  # 首末均为 0，不含边界信息
+            state[pid] = [round(pts[0][1], 4), round(pts[-1][1], 4)]
+        elif abs(pts[0][1]) > 1e-4 or abs(pts[-1][1]) > 1e-4:
+            # 连续参数只要首/末残留非零就记：收尾动作把它带回 0 的（末=0 首
+            # 非 0）也必须记，否则节点里的旧残留永远清不掉
+            carry[pid] = [round(pts[0][1], 4), round(pts[-1][1], 4)]
+    return state, carry
 
 
 LOOP_GROUPS = {"idle"}  # 循环播放的动作组（login 播完一次后由运行时切回 idle）
@@ -704,9 +712,9 @@ def main() -> None:
         clip = obj.read()
         bindings = clip.m_ClipBindingConstant.genericBindings
         curves, duration = convert_clip(clip, bindings, path_hash)
-        # 交互状态机数据：AnimationEvent + 开关型参数的首末值（见函数注释）
+        # 交互状态机数据：AnimationEvent + 开关型/连续型参数的首末值（见函数注释）
         events = clip_events(clip)
-        boundary = clip_boundary_state(clip, path_hash, param_ranges)
+        boundary, carry = clip_boundary_state(clip, path_hash, param_ranges)
         inv_clips.append(
             {
                 "name": clip.m_Name,
@@ -717,11 +725,12 @@ def main() -> None:
                 ],
             }
         )
-        if events or boundary:
+        if events or boundary or carry:
             interaction_clips[clip.m_Name] = {
                 "duration": round(duration, 3),
                 "events": events,
                 "state": boundary,
+                "carry": carry,
             }
         if not curves:
             print(f"[warn] {clip.m_Name}: 无可解析曲线")

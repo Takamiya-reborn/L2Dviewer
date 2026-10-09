@@ -47,6 +47,7 @@ function playTrigger(id) {
       class="stage"
       :key="activeModel.id"
       :model-url="activeModel.url"
+      :fill="0.8"
       @motions="triggers = $event"
     />
     <SkinTab v-model="activeId" :tabs="tabs" title="皮肤列表" />

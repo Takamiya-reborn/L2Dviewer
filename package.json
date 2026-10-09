@@ -5,7 +5,8 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "vite"
+    "dev": "vite",
+    "test": "node scripts/tests/run_all.mjs"
   },
   "dependencies": {
     "lucide-vue-next": "^0.577.0",
