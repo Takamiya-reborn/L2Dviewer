@@ -15,7 +15,7 @@ if (!cubismCoreAvailable()) {
   process.exit(0)
 }
 await loadCubismCore()
-const { InteractionRuntime } = await import('../../src/utils/interaction.js')
+const { InteractionRuntime } = await import('../../src/utils/interaction/index.js')
 
 const clips = {
   // 摊开菜单：caidan 0→1，场景位移 All_X 0→2.34（连续摆位 carry）
@@ -31,6 +31,10 @@ const clips = {
   touch_body: {},
   // end-only 参数：起播恒 0（由常规复位管理，不进节点、不构成门控）
   touch_drag1: { state: { sdrtx: [0, 1] } },
+  // 自指门控（wuzang_3 实况复刻）：以 qiu=1 起播、自身又是唯一 end=1 的动作
+  // ——qiu 是连续量参数（moc 默认 0.7，氛围球），t0 打满亮只是硬设。前置
+  // 不可产出（自要求自供给）→ 豁免门控，分支必须可达
+  touch_special: { state: { qiu: [1, 1] } },
 }
 const motions = {
   idle: [{ File: 'm/idle.motion3.json' }, { File: 'm/idle1.motion3.json' }],
@@ -57,6 +61,7 @@ const fixture = () => {
       caidan: { default: 0, min: 0, max: 1 },
       All_X: { default: 0, min: -10, max: 10 },
       sdrtx: { default: 0, min: 0, max: 1 },
+      qiu: { default: 0.7, min: 0, max: 1 },
       eye: { default: 1, min: 0, max: 1 },
     },
     { opacities },
@@ -78,6 +83,10 @@ const fixture = () => {
       !runtime.preservePids.has('sdrtx'),
   )
   check('gatedPids 收录 caidan（可产出：有动作以 1 收尾）', runtime.gatedPids.has('caidan'))
+  check(
+    'gatedPids 排除自指产出（touch_special 要求 qiu=1 又是唯一 end=1）',
+    !runtime.gatedPids.has('qiu'),
+  )
   check('节点初值 = moc 默认 → isNeutral', runtime.isNeutral())
 }
 
@@ -114,6 +123,7 @@ const fixture = () => {
   const { runtime } = fixture()
   check('前置不满足（菜单收起）→ 分支不可触发', runtime.canPlay('touch_idle2') === false)
   check('end-only 参数（sdrtx 起播 0）不构成门控', runtime.canPlay('touch_drag1') === true)
+  check('自指前置豁免：连续量参数 t0 硬设 1 不拦分支', runtime.canPlay('touch_special') === true)
   check('无状态 clip：无挂起时放行', runtime.canPlay('touch_body') === true)
   runtime.trackMotionStart('touch_idle1', 0)
   check('非 idle 挂起（播放中）拦下无状态 clip', runtime.canPlay('touch_body') === false)

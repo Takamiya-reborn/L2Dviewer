@@ -2,7 +2,7 @@
 
 用法（uv 与裸 python 二选一）:
     python scripts/pull_cs.py                  # 全流程：连设备拉 APK -> 提取 -> dump
-    ... --host 127.0.0.1:5555                  # 先 adb connect（模拟器地址）
+    ... --host [host:port]                     # 先 adb connect（模拟器地址）
     ... --serial emulator-5556                 # 多设备时指定
     ... --extract-only D:/path/to/base.apk     # 只从本地 APK 提取（不连设备）
     ... --dump-only                            # 跳过拉取/提取，只重跑 dump
@@ -175,7 +175,7 @@ def run_dump():
 
 def main():
     ap = argparse.ArgumentParser(description="拉取 APK 提取 il2cpp 并调用 Il2CppDumper")
-    ap.add_argument("--host", help="先 adb connect（如 127.0.0.1:5555）")
+    ap.add_argument("--host", help="先 adb connect（模拟器地址）")
     ap.add_argument("--serial", help="指定 adb -s 设备（多设备时）")
     ap.add_argument("--package", help="手动指定包名（默认自动匹配 azurlane）")
     ap.add_argument("--extract-only", metavar="APK", help="只从本地 APK 提取，不连设备")

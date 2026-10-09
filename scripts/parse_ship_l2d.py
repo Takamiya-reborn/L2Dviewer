@@ -1,13 +1,13 @@
 """解析社区明文 Lua 的 ship_l2d 交互配置（.tmp/lua/<服务器>/sharecfg/ship_l2d.lua）。
 
 用法（uv 与裸 python 二选一）:
-    uv run python -I scripts/parse_ship_l2d.py <skin_id>       # 如 407041（fulici_2）
+    uv run python -I scripts/parse_ship_l2d.py <skin_id>       # 数字皮肤 id
     python -I scripts/parse_ship_l2d.py <skin_id>              # 同上，默认 CN
     ... --server JP                                            # 换服务器快照
     ... --raw                                                  # 输出完整 JSON 而非摘要
 
 ship_l2d 条目键 = 皮肤 id*100 + 序号（如 40704101），每条描述一个可交互区
-（draw_able_name）绑定的拖拽/反应参数机。字段语义见 unpack.md。
+（draw_able_name）绑定的拖拽/反应参数机。字段语义见 docs/unpack.md。
 
 数据来历：github.com/AzurLaneTools/AzurLaneLuaScripts（社区自动解密的明文
 游戏 Lua，不入库），由 pull_lua.py 拉取到 .tmp/lua/（gitignore）；
@@ -157,7 +157,7 @@ SUMMARY_FIELDS = [
 
 def main():
     ap = argparse.ArgumentParser(description="解析 ship_l2d 交互配置")
-    ap.add_argument("skin_id", type=int, help="数字皮肤 id，如 407041（fulici_2）")
+    ap.add_argument("skin_id", type=int, help="数字皮肤 id")
     ap.add_argument("--server", default="CN", help="服务器目录（默认 CN，需先 pull_lua.py）")
     ap.add_argument("--raw", action="store_true", help="输出完整 JSON 而非摘要")
     args = ap.parse_args()

@@ -17,8 +17,8 @@
 在浏览器中原画质还原角色的动画与交互（待机、点击反应、拖拽视线跟随等），并提供
 按角色/皮肤分类的图鉴浏览。
 
-- [azurlane.md](azurlane.md) — 游戏资源格式与交互状态机原理
-- [unpack.md](unpack.md) — 提取脚本 `extract.py` 的用法、产物与转换细节
+- [azurlane.md](docs/azurlane.md) — 游戏资源格式与交互状态机原理
+- [unpack.md](docs/unpack.md) — 提取脚本 `extract.py` 的用法、产物与转换细节
 - `scripts/` 下各脚本的命令行用法以文件头部说明为准
 
 ## 目录
@@ -27,16 +27,16 @@
 - [技术栈](#技术栈)
 - [查看器实现](#查看器实现)
 - [项目结构](#项目结构)
-- [致谢](#致谢)
 - [使用](#使用)
+- [测试](#测试)
+- [致谢](#致谢)
 
 ## 版权说明
 
 - 本项目为非官方的粉丝工具，与《碧蓝航线》的开发商及发行方（蛮啾网络、勇仕网络、
   Yostar 等）无任何关联，未获得其授权或背书。
-- 本仓库仅包含代码与文档，**不包含任何游戏资源**。模型、贴图、动画等需使用者
-  自行从本人合法获取的游戏客户端中提取，提取产物仅供本地学习交流，
-  **不得再分发**（`.gitignore` 已排除根目录 `models/`，请保持）。
+- 本仓库仅包含代码与文档，**不包含任何游戏资源**。相关资源需使用者自行从本人
+  合法获取的游戏客户端中提取，提取产物仅供本地学习交流，**不得再分发**。
 - 自游戏客户端提取的资源归原权利方所有，不受本仓库 MIT 许可证约束；
   MIT 仅覆盖本项目自身的代码与文档。
 - `tools/` 内的第三方工具随仓库分发：`tools/adb/` 来自 Android platform-tools
@@ -46,10 +46,6 @@
 - README 头部图标（`src/assets/icon.png`）为《碧蓝航线》官方应用图标，版权归
   蛮啾网络、勇仕网络等原权利方所有，非本项目所有；此处仅作标识用途，
   不代表获得官方授权或背书，不受本仓库 MIT 许可证约束。
-- **本项目禁止构建与部署**：`npm run build` 已默认阻止（见 `vite.config.js`）。
-  模型资产放在仓库根目录 `models/`（不入库、不在 `public/` 内），不会被打包进
-  `dist/`，但构建产物同样拿不到 `/models/*`，对外提供没有意义且容易诱导资源
-  再分发。本仓库仅限本地开发运行。
 - 提取游戏资源可能违反游戏用户协议，由此产生的风险由使用者自行承担。
 - 如权利方认为本项目侵犯其合法权益，请通过 Issue 联系，核实后会及时移除相关内容。
 
@@ -66,7 +62,7 @@
 
 ## 查看器实现
 
-游戏侧的资源格式与状态机机制见 [azurlane.md](azurlane.md)，本节只写查看器
+游戏侧的资源格式与状态机机制见 [azurlane.md](docs/azurlane.md)，本节只写查看器
 怎么把提取产物还原成交互：
 
 - **皮肤清单**：dev server 每次请求实时扫描根目录
@@ -75,7 +71,7 @@
   新增皮肤刷新页面即生效，无需手工登记
 - **加载**：pixi-live2d-display（PixiJS 插件，Cubism 4）加载 model3.json；
   运行时默认找 `Idle` 组（首字母大写），加载时需传 `idleMotionGroup: 'idle'`
-- **点击**：tap 命中 HitArea → 交互运行时（`src/utils/interaction.js`）按
+- **点击**：tap 命中 HitArea → 交互运行时（`src/utils/interaction/`）按
   interaction.json 做状态门控后播放对应动作组。门控实现为显式有向图：节点 =
   开关型参数值向量，动作 = 边——前置约束只取起播值=1 且可产出的开关（比对
   跟踪节点而非实时参数，实时值受逐帧曲线与眨眼/呼吸扰动；0/-1 起播是 t0
@@ -89,7 +85,7 @@
 - **拖拽**：指针拖拽按 char.json（`Live2dChar`）的 DragRateX/Y 与 DampingTime
   做阻尼视线跟随
 - **拖拽参数机**：命中 `ship_l2d` 配置的分区（TouchIdle/TouchDrag 系）时，
-  交互由 `src/utils/dragmachine.js` 的机器接管（配置由 `bake_l2d.py` 烘焙为
+  交互由 `src/utils/dragmachine/` 的机器接管（配置由 `bake_l2d.py` 烘焙为
   模型目录内的 `<id>.l2d.json`）。按下命中分区时 `startDrag` 广播给该分区的
   **全部**机器（与游戏 onPointDown 一致，同名多机协同，如 wuzang_3 的
   TouchDrag2 挂充能/联动/长按 4 台）。已实现触发类型：2 点击（含
@@ -124,18 +120,13 @@ tools/adb/            # Android 平台工具（Apache 2.0，NOTICE 随目录分�
 tools/Il2CppDumper/   # 游戏 C# 程序集 dump 工具（MIT，逆向期参考，仅保留 x64 主程序与 config.json）
 models/               # 导出的标准 Cubism 4 模型，按 <角色>/<皮肤id> 两级目录组织（不入库）
 src/                  # Vue 前端（图鉴 + L2D 舞台 + 交互层）
+├── components/       # UI：L2dStage（瘦壳）+ tabs/ 侧栏 + debug/HudPanel（HUD 面板）
+├── l2d/              # 舞台核心（普通模块 + ctx 对象，不依赖 vue）：motionPatches（动作库补丁）、camera（取景与拖拽标定）、mount（模型挂载装配）、actions（播放 API）、gestures（指针手势）、hud（每帧读数）
+└── utils/            # 交互实现：interaction/（状态机运行时、网格命中、提示层）、dragmachine/（拖拽参数机 machine/orchestrator/triggers）、ambient（effect 氛围层）、models（皮肤清单）
 ```
 
 `.tmp/` 为管线工作目录（gitignore），由脚本按需自动创建：`pull_bundles.py`
 建 `.tmp/bundles/`，游戏 Lua 参考快照由 `pull_lua.py` 拉到 `.tmp/lua/`（见下）。
-
-## 致谢
-
-- [Perfare/Il2CppDumper](https://github.com/Perfare/Il2CppDumper)（MIT）—
-  dump 游戏 Il2Cpp 程序集，交互逻辑还原（`Live2dChar` 等 C# 侧语义）由此入手
-- [AzurLaneTools/AzurLaneLuaScripts](https://github.com/AzurLaneTools/AzurLaneLuaScripts) —
-  社区自动解密发布的游戏明文 Lua 脚本，交互配置（`ship_l2d`）与控制层
-  （`live2d`/`live2ddrag`）语义的权威参照
 
 ## 使用
 
@@ -169,27 +160,52 @@ npm install
 python -m pip install -r requirements.txt # 也可按上方说明使用 uv 或 .venv
 
 # 2. 从设备拉取皮肤 bundle（模拟器 adb 地址按需调整）
-python scripts/pull_bundles.py fulici_2 --host 127.0.0.1:5555
+uv run scripts/pull_bundles.py <skin_id> --host [host:port]
 
 # 3. 拉取游戏 Lua 快照（路径固定 .tmp/lua/<服务器>/，解析端 parse_ship_l2d.py
 #    与烘焙端 bake_l2d.py 从同一位置读取；默认 CN，--server JP 拉日本服；
-#    文件清单与目录结构见 azurlane.md 第 3 节；来源 AzurLaneLuaScripts，
+#    文件清单与目录结构见 docs/azurlane.md 第 3 节；来源 AzurLaneLuaScripts，
 #    需要代理时用 --proxy 或 HTTPS_PROXY 环境变量）
 #    仅基础交互（点击门控、拖拽视线）不需要它
 python scripts/pull_lua.py
 
 # 4. 解包重组为标准 Cubism 4 模型
-python scripts/extract.py fulici_2
+uv run scripts/extract.py <skin_id>
 
 # 5. 烘焙交互配置（ship_l2d → <id>.l2d.json，拖拽参数机的数据源）
 #    不跑这步皮肤也能看，但拖拽参数机整层旁路，交互退回基础近似
-python -I scripts/bake_l2d.py fulici_2
+uv run python -I scripts/bake_l2d.py <skin_id>
 
 # 6. 启动查看
 npm run dev       # dev server 实时扫描 models/ 生成皮肤清单，新增皮肤刷新页面即生效
-# npm run build 已被禁止：models/ 为游戏资产，产物不得分发
 ```
 
 以上流程不涉及 `tools/Il2CppDumper/`：它是逆向期理解游戏 C# 语义的参考工具
-（见 [azurlane.md](azurlane.md) 第 3 节），跑通查看器用不到，`tools/adb/`
+（见 [azurlane.md](docs/azurlane.md) 第 3 节），跑通查看器用不到，`tools/adb/`
 则由第 2 步的 `pull_bundles.py` 调用。
+
+## 测试
+
+测试位于 `scripts/tests/`，覆盖模型扫描、交互状态机、拖拽参数机和氛围层等逻辑。
+在仓库根目录执行：
+
+```bash
+# 运行全部测试
+npm test
+
+# 或直接调用测试入口
+node scripts/tests/run_all.mjs
+
+# 只运行文件名包含指定字符串的测试，例如交互相关测试
+node scripts/tests/run_all.mjs interaction
+```
+
+测试入口会自动发现并串行运行全部 `test_*.mjs` 文件，最后按退出码汇总结果。
+
+## 致谢
+
+- [Perfare/Il2CppDumper](https://github.com/Perfare/Il2CppDumper)（MIT）—
+  dump 游戏 Il2Cpp 程序集，交互逻辑还原（`Live2dChar` 等 C# 侧语义）由此入手
+- [AzurLaneTools/AzurLaneLuaScripts](https://github.com/AzurLaneTools/AzurLaneLuaScripts) —
+  社区自动解密发布的游戏明文 Lua 脚本，交互配置（`ship_l2d`）与控制层
+  （`live2d`/`live2ddrag`）语义的权威参照

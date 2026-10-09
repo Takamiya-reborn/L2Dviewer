@@ -9,10 +9,10 @@
 
 选项:
     --server LIST 服务器目录，可逗号分隔多个（默认 CN；可选 CN/EN/JP/KR/TW）
-    --proxy URL   HTTP(S) 代理（默认读 HTTPS_PROXY 环境变量）
+    --proxy [http://proxy:port] HTTP(S) 代理（默认读 HTTPS_PROXY 环境变量）
 
 说明:
-    - 文件清单即 azurlane.md 记录的子集，各服务器目录结构一致
+    - 文件清单即 docs/azurlane.md 记录的子集，各服务器目录结构一致
     - 落点固定在 .tmp/lua/（无路径参数）；parse_ship_l2d.py 从同一位置读取，
       两端路径硬编码对齐，改动须同步
     - 上游仓库停更不影响快照有效性，拉一次即可

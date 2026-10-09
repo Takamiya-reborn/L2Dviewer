@@ -30,7 +30,7 @@ function scanModels(modelsDir) {
       let name = id
       try {
         name = JSON.parse(readFileSync(join(dir, `${id}.l2d.json`), 'utf8')).name || id
-      } catch {} // 烘焙文件缺失/损坏时静默回退目录名
+      } catch { } // 烘焙文件缺失/损坏时静默回退目录名
       models.push({ id, name, url: `/models/${char.name}/${id}/${id}.model3.json` })
     }
   }
@@ -65,27 +65,7 @@ function serveModels() {
   }
 }
 
-/**
- * 禁止构建：模型文件（根目录 models/）属于游戏资产，虽不会被 build 打进
- * dist/，但线上也拿不到 /models/*，构建产物没有意义且容易诱导部署再分发。
- * 本仓库仅限本地开发运行；确需本地构建调试时显式放行：
- * ALLOW_BUILD=1 npm run build。
- */
-function noBuild() {
-  return {
-    name: 'no-build',
-    configResolved(resolved) {
-      if (resolved.command === 'build' && process.env.ALLOW_BUILD !== '1') {
-        throw new Error(
-          '本项目禁止构建（models/ 下为游戏资产，产物不得分发）。' +
-          '如确需本地构建调试，使用 ALLOW_BUILD=1 npm run build，产物仅限本机使用。',
-        )
-      }
-    },
-  }
-}
-
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue(), serveModels(), noBuild()],
+  plugins: [vue(), serveModels()],
 })

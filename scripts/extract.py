@@ -1,7 +1,7 @@
 """碧蓝航线 Live2D 皮肤提取器：UnityFS bundle -> 标准 Cubism 4 模型。
 
 用法（uv 与裸 python 二选一）:
-    uv run scripts/extract.py <skin_id>     # 如 fulici_2
+    uv run scripts/extract.py <skin_id>
     python scripts/extract.py <skin_id>     # 裸 python，需先 pip install -r requirements.txt
     ... <bundle_path> <out_dir>             # 兼容旧用法
 
@@ -16,7 +16,7 @@
     textures/texture_XX.png
     motions/<clip_name>.motion3.json
 
-原理 (见 azurlane.md):
+原理 (见 docs/azurlane.md):
     - CubismMoc._bytes 直接是 moc3 二进制
     - 贴图 Texture2D (ASTC 由 UnityPy 转码) -> PNG
     - TextAsset *.physics3 为 JSON 原文（非 UTF-8 的 TextAsset 落 .bin 原始字节）
@@ -392,6 +392,21 @@ def clip_events(clip) -> list:
     ]
 
 
+def _default_switch_like(rng) -> bool:
+    """moc 默认值贴 0/±1 的参数才可能是开关。默认值落在量程中间（如氛围球
+    MB_fenweiqiu* 的 0.7）说明参数是连续量旋钮：某支动作的边界值恰好等于 1
+    （常值 1 的曲线更会整条过 _all_switch_like）不改变其性质，误判成开关会
+    造出"自己要求自己产出"的死锁门控——touch_special 以 fenweiqiu4/5=1 起
+    播且自己是唯一 end=1 的动作，节点从 moc 默认 0.7 起步永无对上 1 的机会，
+    分支从 t0 起被 canPlay 拦死。rng 为 None（量程缺失）时退回旧行为。"""
+    if rng is None:
+        return True
+    d = rng.get("default")
+    if d is None:
+        return True
+    return min(abs(d), abs(d - 1.0), abs(d + 1.0)) <= 0.02
+
+
 def _all_switch_like(values: list) -> bool:
     """图层/道具开关型参数：全部采样值都贴着 0/1/-1。
     连续 pose 参数（视线、嘴形等）取值虽也在 [-1,1]，但中间值会落选。"""
@@ -471,8 +486,9 @@ def clip_boundary_state(clip, path_hash, ranges=None) -> tuple[dict, dict]:
         pts.sort()
         values = [v for _, v in pts]
         pid = rel.split("/")[-1]
-        if _all_switch_like(values) or _boundary_switch_like(
-            values, ranges.get(pid) if ranges else None
+        rng = ranges.get(pid) if ranges else None
+        if _default_switch_like(rng) and (
+            _all_switch_like(values) or _boundary_switch_like(values, rng)
         ):
             if pts[0][1] == 0.0 and pts[-1][1] == 0.0:
                 continue  # 首末均为 0，不含边界信息

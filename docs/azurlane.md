@@ -4,7 +4,7 @@
 > 在 Web 端还原原版交互与动画，质量无损。设备地址、游戏包名等环境信息以实际为准。
 > 各脚本的命令行用法见脚本头部说明；`extract.py` 的产物与转换细节见
 > [unpack.md](unpack.md)。提取产物仅限本地学习交流，不得再分发，
-> 版权与免责见 [README](README.md) 的"版权说明"。
+> 版权与免责见 [README](../README.md) 的"版权说明"。
 
 ## 1. 资源采集
 
@@ -88,7 +88,7 @@ idle 变体切换（`action_trigger_active.idle`：touch_idle1/2/4/6/8 →
 idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
 
 **控制层语义**（通读 `view/ship/live2d.lua` / `live2ddrag.lua` /
-`live2dextend.lua` 得出，Web 移植见 `src/utils/dragmachine.js`）：
+`live2dextend.lua` 得出，Web 移植见 `src/utils/dragmachine/`）：
 
 - 每条 ship_l2d 条目 = 一台 Live2dDrag 参数机：分区（`draw_able_name`）绑定
   参数（`parameter`），按下命中分区即激活（`startDrag`），拖动时
@@ -148,7 +148,13 @@ idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
   喂给 Animator 的是当前变体所在的子状态（`SetInteger("idle")` 后播当前变体
   clip），不是随机挑一支；其余组名（main_1 等）播同名 clip。bake 产物里
   idle 组成员顺序与变体号无关（如 wuzang_3 组内下标 0 是 idle4），按下标
-  随机会错播其他摆位（摆位判定框随之入画，表现为"挂载即巨大判定框"）
+  随机会错播其他摆位（摆位判定框随之入画，表现为"挂载即巨大判定框"）。
+  另注意"巨大判定框"未必是摆位错播：房间类皮肤本就有背景板级 catch-all
+  分区（wuzang_3 的 TouchDrag4 网格静止即 20.78×19 单位 = 4374×4000 画布 px，
+  超出 3037px 视口高，孪生 TouchDrag18 同尺寸停在画布外 x≈−67327，随摆位
+  互换入画；All_Size/BG_Size 形变控制其缩放，min=−1 时缩为 0），游戏端
+  CubismRaycaster raycast 同一网格，点房间空白处同样命中 touch_drag4——
+  2026-10 已用 Cubism Core 直读 moc3 顶点证实，勿再当 bug 排查
 - **取景语义**（`view/ship/live2dpainting.lua`）：没有 ROI/内容拟合——模型根
   节点即画布原点（canvasinfo CanvasOrigin），根缩放恒 `live2d_offset[4]` 或
   默认 `Vector3(52,52,52)`（全皮肤一致），`localPosition = live2d_offset`
@@ -157,7 +163,7 @@ idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
   getDrawableVertices 的换算同源：`x_local = k·PPU + W/2`、
   `y_local = −k·PPU + H/2`，k 为 core 单位制坐标）：视口中心对应模型点
   k = −offset/52，可见画布高 = 母港设计高 750pt ÷ (52/PPU) ≈ 3037px 恒定。
-  `live2d_offset` 由 bake_l2d.py 烘进 l2d.json，L2dStage.fitModel 按此取景，
+  `live2d_offset` 由 bake_l2d.py 烘进 l2d.json，l2d/camera.js 的 fitModel 按此取景，
   无配置时退回旧的 measureScene ROI 拟合
 
 **C# 侧语义**（dump.cs + 定点小窗口反汇编证实，获取途径见第 4 节）：
@@ -179,7 +185,12 @@ idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
 blendMode)` 落到模型参数——Override/Additive/Multiply 与 Cubism 枚举语义
   一致；**未注册参数的 `ChangeParameterData` 是静默 no-op**
 - **坐标**：游戏用 `Input.mousePosition`（Unity 屏幕坐标，y 向上），Web 移植
-  （浏览器 y 向下）时拖拽量的 y 分量须取反，否则 `offset_y` 型机器方向颠倒
+  （浏览器 y 向下）时拖拽量的 y 分量须取反，否则 `offset_y` 型机器方向颠倒；
+  `offset_x/y` 是**游戏 backbuffer 像素**（手机竖屏 ~1080×1920 上标定），查看器
+  里 3037 画布 px 铺满的是视口而非手机屏，窗口比手机矮时同款 offset 会拖不动
+  ——喂给拖拽机的坐标按 H_ref/视口内画布高 换算成"游戏屏幕像素"
+  （l2d/camera.js 的 dragScale，H_ref=1920，localStorage `l2d_dragRefHeight` 可覆盖），
+  点击 30px 判定同理自动回到游戏尺度
 
 **游戏 Lua 的来历**：github.com/AzurLaneTools/AzurLaneLuaScripts（社区自动
 解密发布的明文游戏脚本）。用到的文件由 `scripts/pull_lua.py`

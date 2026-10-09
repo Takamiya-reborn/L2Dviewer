@@ -1,5 +1,5 @@
 // 冒烟测试：拖拽参数机（node scripts/tests/test_dragmachine.mjs，在仓库根目录跑）
-import { DragMachine, DragOrchestrator } from '../../src/utils/dragmachine.js'
+import { DragMachine, DragOrchestrator } from '../../src/utils/dragmachine/index.js'
 import { suite } from './helpers/suite.mjs'
 
 // node 无 localStorage，stub 一个内存版（saveValue/loadValue 依赖）

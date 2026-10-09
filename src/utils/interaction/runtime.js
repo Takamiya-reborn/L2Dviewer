@@ -1,29 +1,8 @@
 /**
- * Unity 端 L2D 交互控制器（Live2dChar + 游戏自定义控制器）的 Web 还原。
- *
- * 数据源是 extract.py 生成的 <id>.interaction.json：每支动作的
- * AnimationEvent（OnAnimEvent=语音钩子、OnFinishAnim(N)=结束状态编号）与
- * 开关型参数（取值贴 0/±1 的图层/道具开关）的 [起播值, 结束值]。字段语义见
- * Unpack.md，协议逆向过程见 azurlane.md 的"交互状态机"一节。
- *
- * 游戏不在动作间复位参数，状态机参数的值跨动作持续，"点击摊开菜单 ->
- * 分支 -> 收尾"的状态机就建立在参数连续性上：
- * - 跨动作保留：touch_idle1 播完后 caidan=1（菜单摊开）持续到分支播完；
- *   连续摆位同理（touch_idle1 摊开菜单时 All_X=2.34 场景右移，idle1 变体
- *   不复写该参数，位移持续到收尾分支带回 0）——extract.py 把这类参数落盘
- *   在 clips[*].carry，与开关参数（state）一起进节点、复位时豁免；
- * - 点击门控：起播值=1 的开关是前置状态（动作依赖该图层/道具已摊开，
- *   touch_idle2/4/6/8 以 caidan=1 起播，仅菜单摊开时是合法分支）。
- *
- * 运行时把它实现成显式的有向图：节点 = 状态参数的值向量，动作 = 边
- * （起播值=1 的开关 = 前置约束，结束值 = 转移结果）。节点被显式跟踪——
- * 动作起播先挂起（pending），播完（motionFinish，即游戏 OnFinishAnim 的
- * 上报时机）才落实转移；被新动作顶掉的挂起动作按"已播完"结算（结束值
- * 是绝对值，重复应用幂等）。门控一律查节点而非实时参数：实时值会被
- * 逐帧曲线、眨眼/呼吸等姿态系统扰动（如点击瞬间正逢眨眼，ParamEyeLOpen
- * 离 1 很远，按实时值比对会误拒合法分支），节点只在转移时变化。
+ * 交互状态机运行时（InteractionRuntime）：把 interaction.json 实现成显式
+ * 有向图——节点 = 状态参数的值向量，动作 = 边。协议背景与字段语义见同目录
+ * index.js 头注释。
  */
-import { Container, Graphics, Text } from 'pixi.js'
 import { MotionPriority } from 'pixi-live2d-display/cubism4'
 
 /** 加载与模型同目录的交互状态机数据；缺失（旧产物/无交互的模型）返回 null */
@@ -74,16 +53,19 @@ export class InteractionRuntime {
     this.node = new Map(
       [...this.preservePids].map((pid) => [pid, this.paramDefault(pid)]),
     )
-    // 门控前置集：起播值=1 且该值可产出（某动作结束值=1，或 moc 默认=1）。
-    // 起播值 0/-1 是 t0 硬设（消隐/复位/表情预设），不构成前置——全参数严格
-    // 匹配会误拦 touch_idle4/6/8（它们以 dianjikyc=0 起播只是收起菜单可点
-    // 区）；不可产出的前置（如 touch_idle6 的 panjiubei=1，数据中无任何动
-    // 作产出该值）若参与门控会让分支永久不可达，同样豁免，待提取补全后再
-    // 收紧。
+    // 门控前置集：起播值=1 且该值可产出的开关（某动作从非 1 起播走到结束
+    // 值=1，或 moc 默认即 1）。起播值 0/-1 是 t0 硬设（消隐/复位/表情预
+    // 设），不构成前置——全参数严格匹配会误拦 touch_idle4/6/8（它们以
+    // dianjikyc=0 起播只是收起菜单可点区）。「从非 1 起播」排除自指产出：
+    // wuzang_3 的 touch_special 以 MB_fenweiqiu4/5=1 起播、自身又是唯一
+    // end=1 的动作（氛围球是连续量参数，默认 0.7，曲线 t0 打满亮只是硬设
+    // 不是状态前置），若算可产出则该分支从 t0 起永久不可达（自要求自供
+    // 给的死锁）；不可产出且默认非 1 的前置（如 touch_idle6 的
+    // panjiubei=1）同样豁免，待提取补全后再收紧。
     this.gatedPids = new Set(
       Object.values(clips)
         .flatMap((c) => Object.entries(c.state ?? {}))
-        .filter(([, [, end]]) => end === 1)
+        .filter(([, [start, end]]) => end === 1 && start !== 1)
         .map(([pid]) => pid),
     )
     for (const pid of this.statePids) {
@@ -182,13 +164,16 @@ export class InteractionRuntime {
   }
 
   /**
-   * 命中检测只看网格包围盒，不判断透明度，隐藏部位（其他姿态的判定网格、
-   * 摆位零件）也会响应；这里按 drawable 不透明度过滤，只保留可见命中区。
+   * 从网格级命中结果里挑第一个可用分区。入参来自 meshHitTest（已按渲染序
+   * 排好、视觉最上层在前），本方法只做两件事：
+   * - 透明度过滤：命中检测只看网格形状，不判断不透明度，隐藏部位（其他
+   *   姿态的判定网格、摆位零件）也会响应；按 drawable 不透明度过滤，
+   *   只保留可见命中区（与游戏 raycast 行为一致）；
+   * - 手势区分（与游戏一致）：一次 raycast 会同时命中 idle/head/body 与
+   *   drag 两族分区，控制器按手势挑族——点击取非 drag 分区，拖拽只取
+   *   drag 分区。
    *
-   * 手势区分（与游戏一致）：一次 raycast 会同时命中 idle/head/body 与 drag
-   * 两族分区，控制器按手势挑族——点击取非 drag 分区，拖拽只取 drag 分区。
-   *
-   * @param {string[]} names 命中的分区名（internalModel.hitTest 的返回）
+   * @param {string[]} names 命中的分区名（meshHitTest 的返回）
    * @param {'tap'|'drag'} gesture
    */
   firstVisibleHit(names, gesture = 'tap') {
@@ -281,162 +266,5 @@ export class InteractionRuntime {
     if (!pick) return null
     this.model.motion(base, pick.index, MotionPriority.FORCE)
     return { group: base }
-  }
-}
-
-/**
- * 交互点可视化提示（测试用）：每个命中区一个半透明圆点标在其 drawable
- * 网格中心，外加网格包围盒轮廓（isHit 的实际判定范围）——绿 = 可交互、
- * 红 = 被挡下、橙 = 游戏配置了触发但查看器未实现该触发类型、隐藏网格
- * （如菜单收起时的菜单项）不显示；位置每帧跟随模型。
- *
- * 红绿判定按真实路由分家：机器分区（ship_l2d 有 draw_able_name 匹配）由
- * 拖拽参数机接管，不查 interaction.json 的参数门控——颜色按机器自身的
- * 可触发条件（冷却/单触发/播放中/重复 idle 豁免，取编排器路由到的那台，
- * 与游戏 GetDragPart 的"注册顺序第一台赢"一致）判定；无机器的分区
- * （touch_head/body 等 C# 路径）才按起播门控（canPlay）判定。两种判据
- * 混用会把"机器照样能拖"的分区画红、"未实现触发类型/冷却中"的分区画绿。
- *
- * 标签显示分区驱动的参数（编排器 l2d.json 的 draw_able_name -> parameter），
- * 不用网格自己的名字：部分皮肤的网格名与反应编号是错位的（shengluyisi_5:
- * TouchDrag23 网格驱动 touch_drag25、TouchDrag25 驱动 touch_drag29——
- * 游戏 sharecfg ship_l2d 原始数据即如此），按网格名标注会把 drag25 的
- * 范围/中心画到 TouchDrag25 网格上，与游戏内实际触发位置对不上。多个
- * 机器共用同一分区时参数用 "+" 连接；无机器的分区（摸头/普通触摸等）
- * 沿用网格名。
- *
- * @param app pixi Application（提示层挂到其 stage）
- * @param getRuntime () => InteractionRuntime | null，每帧取当前运行时
- * @param getVisible () => boolean，提示层开关
- * @param getOrch () => DragOrchestrator | null，拖拽参数机编排器
- * @returns {{ rebuild(model): void, destroy(): void, update(): string }}
- *   update 每帧调用，返回 HUD 文本（状态机参数实时值，供测试对照）
- */
-export function createInteractionHints(app, getRuntime, getVisible, getOrch = null) {
-  let layer = null
-  let hints = []
-
-  /** 分区名（hitArea Name，如 touch_drag23）-> 驱动参数名（如 touch_drag25）。
-      归一化规则与 DragOrchestrator.machineByZone 一致（剔大小写与分隔符）；
-      无机器覆盖时返回 null，调用方回落到网格名 */
-  function zoneParams(orch, zoneName) {
-    if (!orch?.machines?.length) return null
-    const key = String(zoneName).toLowerCase().replace(/[^a-z0-9]/g, '')
-    const found = []
-    for (const m of orch.machines) {
-      if (String(m.drawAbleName).toLowerCase().replace(/[^a-z0-9]/g, '') !== key) continue
-      if (!found.includes(m.parameterName)) found.push(m.parameterName)
-    }
-    return found.length ? found.join('+') : null
-  }
-
-  return {
-    rebuild(model) {
-      this.destroy()
-      layer = new Container()
-      const areas = model.internalModel.hitAreas ?? {}
-      hints = Object.entries(areas).map(([name, area]) => {
-        const dot = new Graphics()
-        const label = new Text(name, {
-          fontSize: 10,
-          fill: 0xffffff,
-          letterSpacing: 0.5,
-        })
-        label.alpha = 0.85
-        layer.addChild(dot, label)
-        return { name, idx: area.index, dot, label }
-      })
-      app.stage.addChild(layer)
-    },
-
-    destroy() {
-      if (layer) {
-        app.stage.removeChild(layer)
-        layer.destroy({ children: true })
-        layer = null
-      }
-      hints = []
-    },
-
-    update() {
-      if (!layer) return ''
-      const runtime = getRuntime()
-      if (!getVisible() || !runtime) {
-        layer.visible = false
-        return ''
-      }
-      layer.visible = true
-      const core = runtime.model.internalModel.coreModel
-      const hasOpacity = typeof core.getDrawableOpacity === 'function'
-      for (const h of hints) {
-        if (!hasOpacity || core.getDrawableOpacity(h.idx) <= 0.001) {
-          h.dot.visible = h.label.visible = false
-          continue
-        }
-        // 标签 = 分区驱动的参数（见函数注释）。逐帧解析：编排器随模型热切换
-        const orch = getOrch?.()
-        const params = zoneParams(orch, h.name)
-        if (params && h.label.text !== params) h.label.text = params
-        const verts = runtime.model.internalModel.getDrawableVertices(h.idx)
-        let minX = Infinity
-        let minY = Infinity
-        let maxX = -Infinity
-        let maxY = -Infinity
-        let cx = 0
-        let cy = 0
-        for (let j = 0; j < verts.length; j += 2) {
-          const x = verts[j]
-          const y = verts[j + 1]
-          if (x < minX) minX = x
-          if (x > maxX) maxX = x
-          if (y < minY) minY = y
-          if (y > maxY) maxY = y
-          cx += x
-          cy += y
-        }
-        const n = verts.length / 2
-        const g = runtime.model.toGlobal({ x: cx / n, y: cy / n })
-        h.dot.visible = h.label.visible = true
-        h.dot.position.set(0, 0)
-        h.dot.clear()
-        // 判定网格包围盒轮廓（模型空间取角点转全局坐标）：isHit 就是这个
-        // 矩形的精确包含测试，画出实际覆盖范围，对照松手位置排查命中落空
-        const p0 = runtime.model.toGlobal({ x: minX, y: minY })
-        const p1 = runtime.model.toGlobal({ x: maxX, y: maxY })
-        // 颜色按真实路由判定（见函数注释）：机器分区看参数机的可触发条件
-        // （同名多机时任意一台可响应即绿），其余分区看 interaction.json 的
-        // 起播门控；橙 = 触发类型未实现
-        const hasMachine = params && orch?.machinesForZone(h.name).length
-        const state = params ? orch?.zoneInteractable(h.name) : null
-        const color =
-          state === true || (!hasMachine && runtime.canPlay(h.name))
-            ? 0x4fc08d
-            : state === null
-              ? 0xe0a03c
-              : 0xe05555
-        h.dot.beginFill(color, 0.06)
-        h.dot.drawRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y)
-        h.dot.lineStyle(1, color, 0.8)
-        h.dot.drawRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y)
-        h.dot.endFill()
-        h.dot.beginFill(color, 0.35)
-        h.dot.drawCircle(g.x, g.y, 9)
-        h.dot.endFill()
-        h.label.position.set(g.x + 12, g.y - 7)
-      }
-      const parts = [...runtime.statePids].map(
-        (pid) => `${pid}=${Math.round(runtime.paramValue(pid))}`,
-      )
-      // 连续摆位只报节点里的非默认残留（实时值被逐帧曲线扰动，不适合读数）
-      const carried = [...runtime.carryPids].filter(
-        (pid) =>
-          Math.abs((runtime.node.get(pid) ?? 0) - runtime.paramDefault(pid)) >
-          runtime.eps,
-      )
-      parts.push(
-        ...carried.map((pid) => `${pid}=${runtime.node.get(pid)}`),
-      )
-      return parts.join('  ')
-    },
   }
 }

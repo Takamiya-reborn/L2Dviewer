@@ -3,12 +3,12 @@
 `extract.py` 把碧蓝航线的单个 Live2D 皮肤 bundle（UnityFS）解包并重组为
 **标准 Cubism 4 模型**，可直接被 pixi-live2d-display 等运行时加载。
 游戏资源格式与交互状态机原理见 [azurlane.md](azurlane.md)。
-提取产物仅限本地学习交流，不得再分发，版权与免责见 [README](README.md) 的"版权说明"。
+提取产物仅限本地学习交流，不得再分发，版权与免责见 [README](../README.md) 的"版权说明"。
 
 ## 用法
 
 ```bash
-uv run scripts/extract.py <skin_id>                 # 如 fulici_2（推荐）
+uv run scripts/extract.py <skin_id>                 # 推荐
 python scripts/extract.py <skin_id>                 # 或直接用 Python 启动
 uv run scripts/extract.py <bundle_path> <out_dir>   # 兼容：显式指定输入与输出
 ```
@@ -57,7 +57,7 @@ bundle 现写探针。产物全部落在模型目录内，目录间互不引用�
 - **`<id>.char.json`**：`Live2dChar` MonoBehaviour 的交互参数（拖拽速率、
   阻尼、点击响应开关），语义与用法见 [azurlane.md](azurlane.md)
 - **`<id>.interaction.json`**：游戏交互状态机的数据还原（状态机机制见
-  [azurlane.md](azurlane.md) 第 3 节，运行时消费方式见 [README](README.md)
+  [azurlane.md](azurlane.md) 第 3 节，运行时消费方式见 [README](../README.md)
   的"查看器实现"）：
   - `clips` 下每支含数据的动作记录：
     - `events`：`AnimationEvent` 列表（`OnAnimEvent` 语音钩子、
@@ -78,7 +78,7 @@ bundle 现写探针。产物全部落在模型目录内，目录间互不引用�
   `skin_id`（数字皮肤 id）、`entries`（该皮肤的 ship_l2d 条目，按游戏注册
   顺序，字段原样保留）、`idle_index`（idle 变体号 → 动作 clip 名映射，取自
   interaction.json 的 `animator.states`）。运行时消费方式见
-  `src/utils/dragmachine.js` 头注与 [README](README.md) 的"查看器实现"
+  `src/utils/dragmachine/index.js` 头注与 [README](../README.md) 的"查看器实现"
 
 ## 转换原理
 
@@ -133,7 +133,7 @@ Transform 层级，对每条 GameObject 路径（相对 Animator 根，不含根
 - 交互配置（分区→动作/拖拽参数机）不在 bundle 内，来自游戏 Lua 配置快照
   `.tmp/lua/`，解析用 `python -I scripts/parse_ship_l2d.py <皮肤id>`（或
   `uv run python -I …`），烘焙进模型目录用 `python -I scripts/bake_l2d.py
-  <painting名>`；来历与文件清单见 [azurlane.md](azurlane.md) 第 3 节
+<painting名>`；来历与文件清单见 [azurlane.md](azurlane.md) 第 3 节
 - 解码部分从 UnityPy 1.9.28 的 `AnimationClip.py` 摘取（MIT），其余版本未验证
 - 个别曲线的路径哈希在 Transform 层级中找不到对应（bundle 内本就无法解析的
   数据），另有若干无采样数据的空 Opacity 绑定；提取时打印 `[warn]` 并跳过，

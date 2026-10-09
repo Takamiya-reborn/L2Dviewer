@@ -1,14 +1,14 @@
 """碧蓝航线 L2D 资源 adb 拉取器：设备 files/AssetBundles/live2d -> .tmp/bundles/。
 
 用法（uv 与裸 python 二选一）:
-    uv run scripts/pull_bundles.py <skin_id>...       # 按皮肤 id 拉取（fulici_2 等，_hx 为改造/婚变体）
+    uv run scripts/pull_bundles.py <skin_id>...       # 按皮肤 id 拉取（_hx 为改造/婚变体）
     python scripts/pull_bundles.py <skin_id>...       # 同上，裸 python（仅标准库，无需装依赖）
     ... --all                                         # 拉取全部 bundle（先预览总量，需确认）
     ... --list [关键词]                               # 只列出远端 bundle（可按关键词过滤）
     ... --index                                       # 只更新 .tmp/ 下的索引缓存
 
 选项:
-    --host ADDR     先 adb connect（模拟器地址，如 127.0.0.1:5555）
+    --host [host:port] 先 adb connect（模拟器地址）
     --serial ADDR   指定 adb -s 设备（多设备时用）
     --package PKG   手动指定游戏包名（默认从 pm list packages 里自动匹配 azurlane）
     --dest DIR      bundle 落盘目录（默认 .tmp/bundles/）
@@ -17,7 +17,7 @@
 说明:
     - 索引文件 hashes-live2d.csv / version-live2d.txt 随任何拉取动作一并更新到
       .tmp/（--list 除外），其他资源类别（语音、立绘等）同构清单换 --package 外的
-      类别名不在本脚本范围，按 azurlane.md 手动 pull 即可
+            类别名不在本脚本范围，按 docs/azurlane.md 手动 pull 即可
     - 从 Python subprocess 调 adb 无 MSYS 路径转换问题，不需要 Git Bash 的 `//` 前缀
 """
 
@@ -114,7 +114,7 @@ def sync_index(serial, package, tmp):
 def main():
     ap = argparse.ArgumentParser(
         description="碧蓝航线 L2D 资源 adb 拉取器（详见文件头 docstring）",
-        epilog="示例: python scripts/pull_bundles.py fulici_2 newjersey_4 --host 127.0.0.1:5555",
+        epilog="示例: uv run scripts/pull_bundles.py <skin_id>... --host [host:port]",
     )
     ap.add_argument("skin_ids", nargs="*", help="皮肤 id（即远端 bundle 文件名）")
     ap.add_argument("--all", action="store_true", help="拉取全部 bundle")

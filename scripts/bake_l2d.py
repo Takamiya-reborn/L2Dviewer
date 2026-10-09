@@ -1,8 +1,8 @@
 """把游戏 Lua 的 ship_l2d 交互配置烘焙进模型目录（<id>.l2d.json）。
 
 用法（uv 与裸 python 二选一）:
-    uv run python -I scripts/bake_l2d.py fulici_2     # 按 painting 名烘焙
-    python -I scripts/bake_l2d.py 407041              # 或直接用数字皮肤 id
+    uv run python -I scripts/bake_l2d.py <skin_id>    # 按 painting 名烘焙
+    python -I scripts/bake_l2d.py <skin_id>           # 或直接用数字皮肤 id
     ... --server JP                                   # 换服务器快照
     ... --out <模型目录>                              # 显式指定输出目录
 
@@ -19,7 +19,7 @@
                 actionId=1 的状态，subIndex 即变体号；motions.idle 组内顺序
                 是 bundle 对象序，不能当下标用）
 
-数据来历与字段语义见 azurlane.md 第 3 节；运行时消费方式见 src/utils/
+数据来历与字段语义见 docs/azurlane.md 第 3 节；运行时消费方式见 src/utils/
 dragmachine.js 头注。读取路径固定 .tmp/lua/<服务器>/，与 pull_lua.py 的
 落点硬编码对齐，改动须同步。
 """
@@ -107,7 +107,7 @@ def build_idle_index(model_dir: Path) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description="烘焙 ship_l2d 交互配置到模型目录")
-    ap.add_argument("skin", help="painting 名（fulici_2）或数字皮肤 id（407041）")
+    ap.add_argument("skin", help="painting 名或数字皮肤 id")
     ap.add_argument(
         "--server", default="CN", help="服务器目录（默认 CN，需先 pull_lua.py）"
     )

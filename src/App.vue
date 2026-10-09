@@ -1,8 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue'
 import L2dStage from './components/L2dStage.vue'
-import SkinTab from './components/SkinTab.vue'
-import StateTab from './components/StateTab.vue'
+import SkinTab from './components/tabs/SkinTab.vue'
+import StateTab from './components/tabs/StateTab.vue'
 import { MODELS, TRIGGER_LABELS, TRIGGER_ORDER } from './utils/models'
 
 const activeId = ref(MODELS[0]?.id ?? '')
@@ -41,15 +41,8 @@ function playTrigger(id) {
 <template>
   <div class="layout">
     <!-- 舞台永远占满容器，两侧栏作为蒙板浮在上面 -->
-    <L2dStage
-      v-if="activeModel"
-      ref="stageRef"
-      class="stage"
-      :key="activeModel.id"
-      :model-url="activeModel.url"
-      :fill="0.8"
-      @motions="triggers = $event"
-    />
+    <L2dStage v-if="activeModel" ref="stageRef" class="stage" :key="activeModel.id" :model-url="activeModel.url"
+      :fill="0.8" @motions="triggers = $event" />
     <SkinTab v-model="activeId" :tabs="tabs" title="皮肤列表" />
     <StateTab :items="triggerItems" :active="activeTrigger" title="状态触发" @select="playTrigger" />
   </div>
