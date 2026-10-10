@@ -27,11 +27,11 @@
       顺序与此无关）。min<=default<=max 全程成立可作校验。
 """
 
+import argparse
 import json
 import math
 import re
 import struct
-import sys
 import zlib
 from pathlib import Path
 
@@ -289,12 +289,29 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
                     (t, key.value, key.outSlope, key.inSlope)
                 )
 
-    # constant: m_IndexArray[绑定序号] -> constant.data 下标
-    index_array = list(mc.m_IndexArray)
+    # constant: 本 Unity 版本的 m_IndexArray 恒为 -1（死字段），常量段按绑定
+    # 顺序隐式对位——constant.data 第 k 项 = 第 k 个无 streamed 关键帧的绑定。
+    # 实测全部 clip 满足 len(constant) == 绑定数 - streamed 绑定数（见
+    # docs/azurlane.md 常量段一节）。被压成常量的曲线同样是被动画的：值为 0
+    # 但模型默认值非 0 的参数（如氛围球 0.7）必须钉到 0，不能漏。
+    covered = set(streamed_keys)
+    dense_n = (
+        dense.m_CurveCount if dense.m_CurveCount > 0 and dense.m_SampleArray else 0
+    )
+    covered.update(range(dense_n))
     constant_keys = {}
-    for i, v in enumerate(index_array):
-        if v >= 0 and v < len(constant) and i in curve_meta:
-            constant_keys[i] = [(0.0, constant[v], 0.0, 0.0)]
+    k = 0
+    for i in range(len(bindings)):
+        if i in covered:
+            continue
+        if k < len(constant) and i in curve_meta:
+            constant_keys[i] = [(0.0, constant[k], 0.0, 0.0)]
+        k += 1
+    if k != len(constant):
+        print(
+            f"[warn] {clip.m_Name}: 常量段 {len(constant)} 值 vs 非流式绑定 {k} 条，"
+            f"隐式对位假设可能失效"
+        )
 
     # dense: 稠密采样, curve_count x frame_count
     dense_keys = {}
@@ -309,6 +326,21 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
             ]
             dense_keys[i] = [(t, v, 0.0, 0.0) for (t, v) in pts]
 
+    # 常量曲线的持续范围：Unity 里常量在整支动作内生效（m_StopTime 封顶）。
+    # 播放器（Cubism 官方解析）不接受零段曲线——读基点后会对 undefined 段类型
+    # 空转一圈并多耗一个段配额，totalSegmentCount 超出 Meta 分配即解析崩溃
+    # （表现：动作全部无法播放）。故单关键帧曲线一律表达为 stepped 段铺满时长。
+    stop_time = getattr(mc, "m_StopTime", 0.0) or 0.0
+    key_max_t = max(
+        (
+            ks[-1][0]
+            for ks in list(streamed_keys.values()) + list(dense_keys.values())
+            if ks
+        ),
+        default=0.0,
+    )
+    clip_dur = max(key_max_t, stop_time)
+
     curves = []
     for i in sorted(curve_meta):
         name, target = curve_meta[i]
@@ -317,6 +349,11 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
             continue
         keys.sort(key=lambda k: k[0])
         segs = [keys[0][0], keys[0][1]]
+        if len(keys) == 1:
+            # 单关键帧 = 常量：stepped 段铺满动作时长（clip_dur=0 的极端场合
+            # 才退化为裸单点）
+            if clip_dur > keys[0][0]:
+                segs += [2, clip_dur, keys[0][1]]
         for k0, k1 in zip(keys, keys[1:]):
             t0, v0, out0, _in0 = k0
             t1, v1, _o, in1 = k1
@@ -461,10 +498,20 @@ def clip_boundary_state(clip, path_hash, ranges=None) -> tuple[dict, dict]:
                 continue
             for key in frame.key_list:
                 series.setdefault(key.index, []).append((frame.time, key.value))
+    # constant 段与 convert_clip 同一解码：m_IndexArray 死字段，按绑定顺序
+    # 隐式对位（第 k 项 = 第 k 个无 streamed/dense 数据的绑定）
     constant = cd.m_ConstantClip.data
-    for i, v in enumerate(mc.m_IndexArray):
-        if 0 <= v < len(constant):
-            series.setdefault(i, []).append((0.0, constant[v]))
+    covered = set(series)
+    dense = cd.m_DenseClip
+    if dense.m_CurveCount > 0 and dense.m_SampleArray:
+        covered.update(range(dense.m_CurveCount))
+    k = 0
+    for i in range(len(bindings)):
+        if i in covered:
+            continue
+        if k < len(constant):
+            series.setdefault(i, []).append((0.0, constant[k]))
+        k += 1
     dense = cd.m_DenseClip
     if dense.m_CurveCount > 0 and dense.m_SampleArray:
         n = dense.m_CurveCount
@@ -620,14 +667,192 @@ def animator_routing(env) -> dict | None:
     return {"paramKinds": param_kinds, "states": states}
 
 
+LUA_ENTRY_RE = re.compile(r"^\tpg\.base\.ship_l2d\[(\d+)\] = \{$", re.MULTILINE)
+LUA_TEMPLATE_RE = re.compile(
+    r"^_G\.pg\.base\.ship_skin_template\[(\d+)\] = \{$", re.MULTILINE
+)
+LUA_IDENT_RE = re.compile(r"[A-Za-z_]\w*")
+
+
+class _LuaParser:
+    """解析社区快照中的规范 Lua 表。"""
+
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+
+    def parse(self):
+        return self._value()
+
+    def _skip(self):
+        while self.pos < len(self.text) and self.text[self.pos] in " \t\r\n":
+            self.pos += 1
+
+    def _value(self):
+        self._skip()
+        char = self.text[self.pos]
+        if char == "{":
+            return self._table()
+        if char == '"':
+            end = self.text.index('"', self.pos + 1)
+            value = self.text[self.pos + 1 : end]
+            self.pos = end + 1
+            return value
+        number = re.match(r"[-+0-9.eE]+", self.text[self.pos :])
+        if number:
+            value = number.group(0)
+            self.pos += len(value)
+            return float(value) if "." in value or "e" in value.lower() else int(value)
+        for word, value in (("true", True), ("false", False), ("nil", None)):
+            if self.text.startswith(word, self.pos):
+                self.pos += len(word)
+                return value
+        raise ValueError(f"无法解析 Lua 值: {self.text[self.pos : self.pos + 40]!r}")
+
+    def _table(self):
+        self.pos += 1
+        table, array = {}, []
+        while True:
+            self._skip()
+            if self.pos >= len(self.text):
+                raise ValueError("Lua 表在闭合前结束")
+            if self.text[self.pos] == "}":
+                self.pos += 1
+                return array if array else table
+            ident = LUA_IDENT_RE.match(self.text, self.pos)
+            if ident:
+                save = self.pos
+                self.pos = ident.end()
+                self._skip()
+                if self.pos < len(self.text) and self.text[self.pos] == "=":
+                    self.pos += 1
+                    table[ident.group(0)] = self._value()
+                    self._comma()
+                    continue
+                self.pos = save
+            array.append(self._value())
+            self._comma()
+
+    def _comma(self):
+        self._skip()
+        if self.pos < len(self.text) and self.text[self.pos] == ",":
+            self.pos += 1
+
+
+def _lua_block(text: str, matches: list, index: int) -> dict:
+    end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+    return _LuaParser("{" + text[matches[index].end() : end]).parse()
+
+
+def _read_skin_template(text: str, skin_id: int) -> dict:
+    matches = list(LUA_TEMPLATE_RE.finditer(text))
+    for index, match in enumerate(matches):
+        if int(match.group(1)) == skin_id:
+            return _lua_block(text, matches, index)
+    raise ValueError(f"ship_skin_template 中没有皮肤 {skin_id}")
+
+
+def _read_template_by_painting(text: str, painting: str) -> dict:
+    matches = list(LUA_TEMPLATE_RE.finditer(text))
+    for line in re.finditer(
+        rf'^\tpainting = "{re.escape(painting)}",$', text, re.MULTILINE
+    ):
+        owners = [match for match in matches if match.start() < line.start()]
+        if owners:
+            owner = owners[-1]
+            return _lua_block(text, matches, matches.index(owner))
+    raise ValueError(f"ship_skin_template 中没有 painting {painting}")
+
+
+def _parse_ship_l2d(text: str, skin_id: int) -> list:
+    matches = list(LUA_ENTRY_RE.finditer(text))
+    entries = []
+    for index, match in enumerate(matches):
+        key = int(match.group(1))
+        if key // 100 == skin_id:
+            entries.append({"key": key, **_lua_block(text, matches, index)})
+    return entries
+
+
+def _idle_index(model_dir: Path) -> dict:
+    path = model_dir / f"{model_dir.name}.interaction.json"
+    if not path.exists():
+        return {}
+    states = (
+        json.loads(path.read_text(encoding="utf-8"))
+        .get("animator", {})
+        .get("states", [])
+    )
+    return dict(
+        sorted(
+            (state["subIndex"], state["clip"])
+            for state in states
+            if state.get("actionId") == 1 and state.get("clip")
+        )
+    )
+
+
+def bake_l2d(model_dir: Path, model_id: str, server: str, skin_ref: str) -> bool:
+    """把本地 Lua 快照烘焙为模型目录内的 l2d.json。"""
+    lua_root = ROOT / ".tmp" / "lua" / server
+    lua_path = lua_root / "sharecfg" / "ship_l2d.lua"
+    template_path = lua_root / "sharecfgdata" / "ship_skin_template.lua"
+    if not lua_path.exists() or not template_path.exists():
+        print(f"[warn] Lua 快照不存在，跳过 l2d.json（服务器: {server}）")
+        return False
+
+    template_text = template_path.read_text(encoding="utf-8")
+    if skin_ref.isdigit():
+        skin_id = int(skin_ref)
+        template = _read_skin_template(template_text, skin_id)
+        painting = template["painting"]
+    else:
+        painting = skin_ref
+        template = _read_template_by_painting(template_text, painting)
+        skin_id = int(template["id"])
+
+    l2d_ids = template.get("ship_l2d_id")
+    if not isinstance(l2d_ids, list) or not l2d_ids:
+        print(f"[warn] 皮肤 {skin_id}（{painting}）没有 ship_l2d_id，跳过 l2d.json")
+        return False
+    by_key = {
+        entry["key"]: entry
+        for entry in _parse_ship_l2d(lua_path.read_text(encoding="utf-8"), skin_id)
+    }
+    missing = [key for key in l2d_ids if key not in by_key]
+    if missing:
+        raise ValueError(f"ship_l2d.lua 缺少条目: {missing}")
+
+    product = {
+        "skin_id": skin_id,
+        "name": template.get("name"),
+        "ship_group": template.get("ship_group"),
+        "live2d_offset": template.get("live2d_offset"),
+        "idle_index": _idle_index(model_dir),
+        "entries": [by_key[key] for key in l2d_ids],
+    }
+    dest = model_dir / f"{model_id}.l2d.json"
+    dest.write_text(json.dumps(product, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"  l2d: {dest}（{len(product['entries'])} 台机器）")
+    return True
+
+
 def main() -> None:
-    # 只传 skin_id 时 bundle/输出目录按固定约定推导；传完整路径则沿用旧用法
-    bundle = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(description="提取并重组碧蓝航线 Live2D 皮肤")
+    parser.add_argument("source", help="skin_id、painting 名或 bundle 路径")
+    parser.add_argument("out_dir", nargs="?", help="兼容旧用法：显式输出目录")
+    parser.add_argument("--server", default="CN", help="Lua 快照服务器目录（默认 CN）")
+    parser.add_argument("--painting", help="显式指定 Lua 模板 painting 名")
+    parser.add_argument("--no-lua", action="store_true", help="跳过 ship_l2d 配置烘焙")
+    args = parser.parse_args()
+
+    # 只传 skin_id/painting 时 bundle 与输出目录按固定约定推导；传完整路径则沿用旧用法。
+    bundle = Path(args.source)
     if not bundle.is_file():
-        bundle = BUNDLE_DIR / sys.argv[1]
+        bundle = BUNDLE_DIR / args.source
     model_id = bundle.stem  # 如 fulici_2
-    if len(sys.argv) > 2:
-        out_dir = Path(sys.argv[2])
+    if args.out_dir:
+        out_dir = Path(args.out_dir)
     else:
         out_dir = MODEL_ROOT / char_name(model_id) / model_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -834,6 +1059,15 @@ def main() -> None:
     (out_dir / f"{model_id}.inventory.json").write_text(
         json.dumps(inventory, ensure_ascii=False), encoding="utf-8"
     )
+
+    if not args.no_lua:
+        skin_ref = args.painting
+        if skin_ref is None:
+            skin_ref = args.source if not Path(args.source).is_file() else model_id
+        try:
+            bake_l2d(out_dir, model_id, args.server, skin_ref)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"[warn] l2d.json 烘焙失败，基础模型已完成: {exc}")
 
     print(f"完成: {model_id}")
     print(

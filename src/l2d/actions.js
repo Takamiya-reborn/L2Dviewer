@@ -129,6 +129,7 @@ export function createActions(ctx) {
     }
     if (!group) {
       console.warn(`[l2d] 动作 ${clipName} 在模型里不存在，跳过播放`)
+      ctx.orch?.debug?.(`${clipName} 组解析失败（模型里不存在）`)
       return false
     }
     ctx.currentMotion.value = group
@@ -136,7 +137,13 @@ export function createActions(ctx) {
     // 预留被抢等）只静默回 false——调用方（onActionApply）必须拿到 false
     // 才不会把 activeData（idle 变体号/白名单）记到一次没播出去的动作上
     const ok = await ctx.model.motion(group, index, MotionPriority.FORCE)
-    if (!ok) console.warn('[l2d] 动作播放被引擎拒绝:', `${group}[${index}]`)
+    if (!ok) {
+      console.warn('[l2d] 动作播放被引擎拒绝:', `${group}[${index}]`)
+      // 拒绝原因必须进触发链：shengluyisi_5 的环回（drag13:19 -> drag3:4）
+      // 曾因 touch_idle19 播放失败、activeData 不入账而整圈断掉，HUD 里却
+      // 只有一句无来由的"播放失败"
+      ctx.orch?.debug?.(`${clipName} 引擎拒绝(${group}[${index}],当前=${ctx.orch?.playActionName || 'idle循环'})`)
+    }
     return !!ok
   }
 

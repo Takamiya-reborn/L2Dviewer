@@ -203,18 +203,24 @@ export class InteractionRuntime {
    * caidan=1 起播，仅菜单摊开时合法）。不符（如菜单收起时点菜单项）则
    * 不可触发。未收录/无开关参数的反应动作（touch_drag 系等，extract.py
    * 只落盘有事件或边界数据的 clip）在游戏里由控制器状态而非参数门控。
-   * 手势只在等待态被处理（动作播放中途控制器不响应手势），而 idle 循环
-   * 与分支挂起（姿态保持、等待后续手势收尾）都算等待态，故按"无挂起
-   * 动作或挂起的是 idle"放行——菜单摊开后等待拖拽（touch_idle1 ->
-   * touch_drag*）正是挂起态下的合法分支，旧的"仅中性节点"近似会误拦。
+   * 手势只在等待态被处理（动作播放中途控制器不响应手势，见下方实现）：
+   * idle 循环算等待态（pendingIdle），反应动作播完由编排器显式回落 idle，
+   * 等待态即恢复；菜单摊开后的拖拽分支在 pending 清空后照常可达。旧版
+   * "仅中性节点"近似会把摊开菜单误判成不可达，已由节点跟踪替代。
    */
   canPlay(clipName) {
     if (this.checkEnable && !this.checkEnable(clipName)) return false
     if (!this.interaction) return true
+    // 手势只在等待态被处理：反应动作播出期间一切命中触发不放行（游戏内
+    // touch_head 播完前点 touch_body/head 一律无响应，仅"重置交互"入口豁免
+    // ——resetInteraction 直写路径不过这里）。该检查对有 state 条目的 clip
+    // 同样生效：touch_head 收录了 state（Lmoshoub/Rmoxb start=1 不入
+    // gatedPids），曾因等待态检查只写在无 state 分支而能中途顶掉在播动作。
+    // 菜单摊开后的拖拽不受影响——touch_idle1 播完 pending 即清空，拖拽
+    // 分支（机器路径为主）照常响应
+    if (!(this.pending === null || this.pendingIdle)) return false
     const state = this.interaction.clips?.[clipName]?.state
-    if (!state || !Object.keys(state).length) {
-      return this.pending === null || this.pendingIdle
-    }
+    if (!state || !Object.keys(state).length) return true
     for (const [pid, [start]] of Object.entries(state)) {
       if (start !== 1 || !this.gatedPids.has(pid)) continue
       if (Math.abs((this.node.get(pid) ?? 0) - 1) > this.eps) return false

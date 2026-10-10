@@ -1,7 +1,7 @@
 """社区明文 Lua 快照拉取器：AzurLaneLuaScripts 仓库 -> .tmp/lua/<服务器>/。
 
 用法（uv 与裸 python 二选一）:
-    uv run scripts/pull_lua.py              # 拉取 CN 必需文件（parse_ship_l2d.py 用）
+    uv run scripts/pull_lua.py              # 拉取 CN 必需文件（extract.py 用）
     python scripts/pull_lua.py              # 同上，裸 python（仅标准库，无需装依赖）
     ... --server JP                         # 拉日本服务器（可逗号分隔多个：JP,KR）
     ... --all                               # 连同控制层参照文件一起拉（字段语义参照）
@@ -13,8 +13,7 @@
 
 说明:
     - 文件清单即 docs/azurlane.md 记录的子集，各服务器目录结构一致
-    - 落点固定在 .tmp/lua/（无路径参数）；parse_ship_l2d.py 从同一位置读取，
-      两端路径硬编码对齐，改动须同步
+        - 落点固定在 .tmp/lua/（无路径参数）；extract.py 从同一位置读取
     - 上游仓库停更不影响快照有效性，拉一次即可
 """
 
@@ -33,7 +32,7 @@ RAW = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}"
 # 上游按服务器分目录，结构一致（CN/EN/JP/KR/TW）
 SERVERS = ["CN", "EN", "JP", "KR", "TW"]
 
-# 必需：parse_ship_l2d.py 的直接输入（相对服务器目录）
+# 必需：extract.py 的直接输入（相对服务器目录）
 REQUIRED = [
     "sharecfg/ship_l2d.lua",
     "sharecfgdata/ship_skin_template.lua",
@@ -109,7 +108,7 @@ def main():
         print()
     if ok == 0 and not args.force:
         print("全部已存在，无需更新。")
-    print("完成，验证: python -I scripts/parse_ship_l2d.py <皮肤id> [--server JP]")
+    print("完成，下一步: python scripts/extract.py <skin_id> [--server JP]")
 
 
 if __name__ == "__main__":

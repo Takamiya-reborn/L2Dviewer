@@ -1,6 +1,25 @@
 /**
  * 单台拖拽参数机（游戏 Live2dDrag 类的 Web 还原）。模块级约定与触发类型
  * 总览见同目录 index.js 头注释；触发处理器表在 triggers.js。
+ *
+ * == 状态变量契约（属主 × 写入点 × 复位责任） ==
+ * 改任何状态前先查这张表：跨域残留类 bug 的根因几乎都是"绕过属主直改"
+ * 或"漏了某条路径的复位"。行末标注原文依据（live2ddrag.lua = DD）。
+ *
+ * | 变量               | 写入点（复位责任见末列）                      | 复位时机                     |
+ * | _active            | onDown 置真；onUp/onCancel/stopDragIfApply 置假 | reset                        |
+ * | clickTriggerTime   | onDown(down型)/onUp 判定成功置；applyClickTrigger/step 作废清 | reset        |
+ * | nextTriggerTime    | triggerAction 置 limitTime；noteMotionStart 塌缩 0.2；type3+last（onUp/stopDragIfApply/checkResetTriggerTime）与 type3 松手清零 | step 递减 / reset |
+ * | isTriggerAtion     | triggerAction 置真；无 action 分支/focus=1/type3 下标≠1/step !playing 清——step 每帧 !playing 即清是刻意偏离（原文只在状态广播释放 DD:1389，播放失败会滞留到下次广播，移植版取更宽容语义，不改） | reset |
+ * | parameterToStart   | onUp/onCancel（revert>0）置；step 归零并回 startValue | reset                     |
+ * | parameterSmoothTime| onDown=smooth；onUp/onCancel=smoothRevert；reset=smooth | reset（跨域残留防回归点） |
+ * | actionListIndex    | onDown(type3)/applyTrigger 推进回绕/onListenerEvent 命中/loadSaved | reset / clearData |
+ * | triggerActionTime  | onDown 归零；type 1/4 累加（触发不清零，防重发靠双闸 DD:246） | reset |
+ * | extendActionFlag   | type12 handler 置真（一次性）                  | reset                        |
+ * | offsetDragX/Y/TargetX/Y | onMove 累加；commitDragBase 落账；updatePartsSnap 吸附覆盖；step(checkReset)/onIdleChanged/loadSaved/reset 回 startValue | 各自路径 + reset |
+ * | relations[].value/velocity/enable | updateRelations 每帧             | reset                        |
+ *
+ * 按压锁 machineAble 属主在编排器（orchestrator.pressLock），本文件禁止直改。
  */
 import { TRIGGER_HANDLERS } from './triggers.js'
 
@@ -104,6 +123,9 @@ export class DragMachine {
       : []
     this.actionTrigger = entry.action_trigger && typeof entry.action_trigger === 'object' ? entry.action_trigger : null
     this.actionTriggerActive = entry.action_trigger_active || null
+    // 联动层数据（游戏 live2ddrag.lua 的 listenerType/listenerChange/listenerApply）：
+    // {type, change: [[kind, matchList, value, listIndex?]], apply: [kind, ranges]}
+    this.listenerData = entry.listener_data && typeof entry.listener_data === 'object' ? entry.listener_data : null
     this.revertActionIndex = entry.revert_action_index === 1
     // save_parameter=-1 不持久化；revert=-1 的机器松手即存（游戏 saveData）
     this.saveParameterFlag = entry.save_parameter !== -1
@@ -123,6 +145,7 @@ export class DragMachine {
     this.clickTriggerTime = null
     this.nextTriggerTime = 0 // 触发冷却
     this.isTriggerAtion = false // 动作已触发未播完标记（游戏 isTriggerAtion）
+    this.extendActionFlag = false // type 12 扩展门置位（游戏 extendActionFlag）
     this.offsetDragX = this.startValue
     this.offsetDragY = this.startValue
     this.offsetDragTargetX = this.startValue
@@ -171,7 +194,12 @@ export class DragMachine {
    */
   applyClickTrigger() {
     this.clickTriggerTime = null
-    this.orch.setMachineAble(false)
+    // 不广播 DRAG_CLICK：游戏 checkClickAction 成功回调的 onEventNotice
+    // （ON_ACTION_DRAG_CLICK）实参恒为 nil（live2d.lua CT:269/305 slot5(slot12)，
+    // slot12 从未赋值），监听层永远收不到——click_cd 冷却与 listener_data
+    // type 2 在原文是死路径，本地三模型配置也零使用。真路径只有 PLAY（CT:288）
+    // 与 CHANGE_IDLE（changeIdleIndex），见 orchestrator.notice
+    this.orch.pressLock(`点击确认 ${this.drawAbleName}`, false)
     const at = this.actionTrigger
     if (at?.type === 9) {
       const v = this.orch.readParameter(at.parameter ?? this.parameterName)
@@ -183,6 +211,33 @@ export class DragMachine {
       }
     }
     this.applyTrigger()
+  }
+
+  /** 游戏按住期间的收尾豁免（isApplyStopDrag DD:543）：仅 type 14
+      （DRAG_MOVE_DOWN_UP）为 false，本型未移植，恒可收尾 */
+  isApplyStopDrag() {
+    return this.actionTrigger?.type !== 14
+  }
+
+  /**
+   * 游戏触发收尾（apply 块三分支的 slot11，DD:424-428/443-484）：按压中
+   * 触发即松开拖拽——单 action 触发、action_list 回绕、无 action 触发三处
+   * 调用；action_list 非回绕推进不调。未按压 no-op（游戏 stopDrag 整体被
+   * _active 包裹，DD:257）。尾部对齐游戏 stopDrag（DD:256-280）：回弹倒计时、
+   * type3+last 清冷却（checkResetTriggerTime）、拖拽基准落账、档位吸附、存档；
+   * 不动按压锁——游戏靠下一帧 updateTrigger 松手分支解锁（DD:1074-1076）
+   */
+  stopDragIfApply() {
+    if (!this.isApplyStopDrag() || !this._active) return
+    this._active = false
+    if (this.revert > 0) {
+      this.parameterToStart = this.revert
+      this.parameterSmoothTime = this.smoothRevert
+    }
+    if (this.actionTrigger?.type === 3 && this.actionTrigger.last) this.nextTriggerTime = 0
+    this.commitDragBase()
+    this.updatePartsSnap()
+    this.saveData()
   }
 
   /** 游戏触发入口（onEventCallback EVENT_ACTION_APPLY 的 action 分支）。
@@ -208,15 +263,19 @@ export class DragMachine {
       // 的 lastActionIndex != actionListIndex 分支，隔帧生效这里就地生效）
       if (this.revertActionIndex) this.setTargetValue(this.startValue)
       if (action) this.triggerAction()
+      // 回绕即一轮完成：slot11 收尾松开拖拽（DD:461-467，非回绕推进不调）
+      if (idx === at.action_list.length) this.stopDragIfApply()
     } else if (at.action != null) {
       // action 分支（可为随机数组）；空串动作走编排器的"空触发"路径
       action = this.filterAction(at.action)
       this.triggerAction()
+      this.stopDragIfApply()
     } else {
       // 无 action 无 action_list（circle/target 纯开关机）：游戏同样过一遍
       // triggerAction，但立即清掉单触发标记（isTriggerAtion 不滞留）
       this.triggerAction()
       this.isTriggerAtion = false
+      this.stopDragIfApply()
     }
     // 重复 idle 豁免：目标 idle 与当前相同且未开 repeat_flag 时整个触发跳过
     // （菜单已摊开时再点摊开区无效，游戏 onEventCallback 的前置检查）
@@ -253,10 +312,88 @@ export class DragMachine {
     return Array.isArray(action) ? action[Math.floor(Math.random() * action.length)] : action
   }
 
+  /**
+   * 联动层（游戏 live2ddrag.lua onListenerEvent）：编排器把事件扇给全部
+   * 机器，这里分两段——
+   * ① 冷却副作用：原文 onListenerTrigger 还有 DRAG_CLICK → click_cd 名单
+   *    自封 limitTime 冷却一条（DD:207-209），但该通知在原文是死路径
+   *    （EVENT_ACTION_APPLY 成功回调实参恒 nil，CT:269/305，见
+   *    applyClickTrigger 注释），不移植。PLAY 的 min(limitTime,0.2) 塌缩在
+   *    编排器 noteMotionStart 统一做（覆盖非机器路径，实测定案），不在此重复。
+   * ② listenerType 匹配的机器才继续：change 名单按事件类型取校验名
+   *    （PLAY=动作名 / CHANGE_IDLE=变体号，区分大小写与数字/字符串）做
+   *    contains 命中 → kind 1 相对增量（target += value）、kind 2 绝对赋值
+   *    （target = value，数据定案：kind1 全是 ±Δ 计数/充能条，kind2 是
+   *    分区→档位阶梯与置位/清零对），过 fixTarget 钳制；命中即复位连点
+   *    下标（第 4 元缺省 1——配置从未写过第 4 元，缺省复位是真实副作用）。
+   *    listener_data.type 2（DRAG_CLICK）随通知死路径一并失效，不再接受。
+   *    change_focus=false 的暂存分支配置零使用，未移植。
+   * ③ apply 段（kind 1 全库仅 20703701 用）：target 落进区间 [low,high) →
+   *    整包 {idle, activeData} 交编排器 applyActiveData（游戏
+   *    EVENT_CHANGE_IDLE_INDEX 处理器），idle_enable/idle_ignore 按该变体
+   *    取名单后再切 idle。多区间命中取最后一条、目标 idle 与当前变体相同
+   *    时整个事件不发（enable/ignore 一并跳过，DD:183-193）。
+   */
+  onListenerEvent(type, data) {
+    const ld = this.listenerData
+    if (!ld || ld.type !== type) return
+    const checkName = type === 1 ? data.action : type === 3 ? data.idle : undefined
+    if (checkName == null) return
+    let changed = false
+    for (const ch of ld.change ?? []) {
+      if (!Array.isArray(ch?.[1]) || !ch[1].includes(checkName)) continue
+      this.setTargetValue(this.fixTarget(ch[0] === 1 ? this.parameterTargetValue + ch[2] : ch[2]))
+      changed = true
+      const listIndex = ch.length >= 4 ? ch[3] : 1
+      if (listIndex > 0) this.actionListIndex = listIndex
+// debug 读数：触发链关键步，debugHook 接线见 l2d/mount.js
+      this.orch.debug?.(
+        `${this.parameterName} 联动 type${type} 命中[${checkName}] kind${ch[0]} ${ch[2]} → target ${this.parameterTargetValue}`,
+      )
+    }
+    if (!changed) return
+    const apply = ld.apply
+    if (!Array.isArray(apply) || apply[0] !== 1) return
+    // 多区间命中取最后一条（DD:187-191 循环覆写不 break）；目标 idle 与当前
+    // 变体相同时整个 EVENT_CHANGE_IDLE_INDEX 不发——enable/ignore 落账一并
+    // 跳过（DD:193 守卫），不是"切了没效果"而是"根本没切"
+    let hit = null
+    for (const range of apply[1] ?? []) {
+      const [low, high, idle] = range
+      if (this.parameterTargetValue >= low && this.parameterTargetValue < high) hit = idle
+    }
+    if (hit != null && hit !== this.orch.idleIndex) {
+      this.orch.debug?.(`${this.parameterName} 联动 apply 命中 → idle ${hit}`)
+      this.orch.applyActiveData(this.id, this.actionTriggerActive, true, hit)
+    }
+  }
+
   /** 触发冷却启动（游戏 triggerAction） */
   triggerAction() {
     this.nextTriggerTime = this.limitTime
     this.isTriggerAtion = true
+  }
+
+  /**
+   * type 12 扩展门裁决（游戏 checkActionInExtendFlag DD:1281-1314，由控制层
+   * checkEnablePlay CT:176-188 在白/黑名单之前查询）：返回 'block' 拦截 /
+   * 'pass' 直通（越过白/黑名单与按压锁——锁以白名单实现，直通同样越过）/
+   * null 不表态。参数值按名查他机 parameterValue（EVENT_GET_DRAG_PARAMETER
+   * CT:347-358：后注册者胜出、缺省 0；不是模型实时值也不是 targetValue）；
+   * 区间左开右闭 (num[0], num[1]]；名单取本机 actionTriggerActive.ignore/
+   * .enable（bake 空表 {} 经 Array.isArray 判假即不含动作），同命中时
+   * ignore 优先（CT:181-185 if/elseif 顺序）
+   */
+  checkActionInExtend(actionName) {
+    if (!this.extendActionFlag) return null
+    const num = this.actionTrigger.num
+    if (!Array.isArray(num) || num.length < 2) return null
+    const v = this.orch.readDragParameter(this.actionTrigger.parameter)
+    if (!(num[0] < v && v <= num[1])) return null
+    const ad = this.actionTriggerActive
+    if (Array.isArray(ad?.ignore) && ad.ignore.includes(actionName)) return 'block'
+    if (Array.isArray(ad?.enable) && ad.enable.includes(actionName)) return 'pass'
+    return null
   }
 
   // ---- 指针事件（游戏 startDrag / onDrag / stopDrag）----
@@ -276,7 +413,14 @@ export class DragMachine {
     // uv0 表只含该类型；type 6 的下标跨按压持续推进）
     if (this.actionTrigger?.type === 3) this.actionListIndex = 1
     this.parameterSmoothTime = this.smooth
-    this.orch.setMachineAble(true)
+    // 按压锁：原文只有无 down 配置的点击型在 checkClickAction firstActive
+    // 上锁（DD:1408-1410）；down 配置型按下即触发不上锁，type 3/8 的锁在各自
+    // handler 分支里。锁时机比原文（下一帧 updateTrigger）提前到按下同步，
+    // 语义等价——本移植 onDown 没有 updateTrigger 帧
+    const atDown = this.actionTrigger
+    if (atDown && (atDown.type === 2 || atDown.type === 6 || atDown.type === 9) && !atDown.down) {
+      this.orch.pressLock(`按下 ${this.drawAbleName}`, true)
+    }
     // down 型触发：按下即排程（游戏 checkClickAction 的 firstActive 分支）
     if (this.actionTrigger?.down && (this.actionTrigger.focus === 1 || !playing)) {
       this.clickTriggerTime = performance.now() / 1000
@@ -335,7 +479,7 @@ export class DragMachine {
 // debug 读数：触发链关键步，debugHook 接线见 l2d/mount.js
       this.orch.debug?.(`${this.parameterName} 点击判定成功,0.1s后触发`)
     } else {
-      this.orch.setMachineAble(false)
+      this.orch.pressLock(`非点击松手 ${this.drawAbleName}`, false)
       if (clickJudged) {
 // debug 读数：触发链关键步，debugHook 接线见 l2d/mount.js
         this.orch.debug?.(
@@ -362,7 +506,7 @@ export class DragMachine {
       this.parameterToStart = this.revert
       this.parameterSmoothTime = this.smoothRevert
     }
-    this.orch.setMachineAble(false)
+    this.orch.pressLock(`取消 ${this.drawAbleName}`, false)
     this.commitDragBase()
     this.updatePartsSnap()
     this.saveData()
@@ -426,7 +570,7 @@ export class DragMachine {
       if (able && now - this.clickTriggerTime <= CLICK_CONFIRM) this.applyClickTrigger()
       else {
         this.clickTriggerTime = null
-        this.orch.setMachineAble(false)
+        this.orch.pressLock(`确认窗作废 ${this.parameterName}`, false)
 // debug 读数：触发链关键步，debugHook 接线见 l2d/mount.js
         this.orch.debug?.(
           `${this.parameterName} 确认窗口作废(${able ? '过窗' : `冷却中${this.nextTriggerTime.toFixed(2)}s`})`,
@@ -595,7 +739,12 @@ export class DragMachine {
     this.clickTriggerTime = null
     this.parameterToStart = null
     this.isTriggerAtion = false
+    this.extendActionFlag = false
     this.nextTriggerTime = 0
+    // 平滑状态一并归位：松手路径会把 parameterSmoothTime 留在 smoothRevert，
+    // 复位后若不还原，下次触发用回弹时长插值（跨域残留）
+    this.parameterSmoothTime = this.smooth
+    this.parameterSmooth = 0
     this.actionListIndex = 1
     this.triggerActionTime = 0
     for (const r of this.relations) {

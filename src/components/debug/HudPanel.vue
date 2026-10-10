@@ -4,11 +4,13 @@ defineProps({
   hud: { type: Object, default: null },
   showHints: { type: Boolean, default: true },
   showDebug: { type: Boolean, default: true },
+  /** 触点涟漪（游戏"触点特效"复刻）开关 */
+  showRipple: { type: Boolean, default: true },
   /** 当前皮肤是否配了拖拽参数机（决定"重置交互"按钮显隐） */
   hasOrch: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['toggle-hints', 'toggle-debug', 'reset'])
+const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'reset'])
 </script>
 
 <template>
@@ -18,6 +20,9 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'reset'])
     </button>
     <button class="hint-toggle" type="button" @click="emit('toggle-debug')">
       {{ showDebug ? '隐藏调试信息' : '显示调试信息' }}
+    </button>
+    <button class="hint-toggle" type="button" @click="emit('toggle-ripple')">
+      {{ showRipple ? '关闭触点涟漪' : '开启触点涟漪' }}
     </button>
     <button v-if="hasOrch" class="hint-toggle" type="button" @click="emit('reset')">
       重置交互
@@ -43,9 +48,20 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'reset'])
       <div class="debug-row">
         <span class="debug-key">机器</span>
         <span class="debug-pair">idle={{ hud.machine.idle }}</span>
-        <span class="debug-pair">白名单={{ hud.machine.whitelist }}</span>
+        <span class="debug-pair">白名单={{ hud.machine.whitelist }}<template v-if="hud.machine.wlIdle">(t{{ hud.machine.wlIdle }})</template></span>
+        <span v-if="hud.machine.actor" class="debug-pair">落账=#{{ String(hud.machine.actor).slice(-2) }}</span>
         <span v-if="hud.machine.able" class="debug-pair">按压锁</span>
         <span v-if="hud.machine.active" class="debug-pair">按住:{{ hud.machine.active }}</span>
+        <!-- 播放中滞留是"交互一次就锁死"的头号嫌疑：反应动作播完仍显示即中招 -->
+        <span v-if="hud.machine.playing" class="debug-pair warn">
+          播放中:{{ hud.machine.playName }}
+        </span>
+      </div>
+      <div v-if="hud.machine.tap?.length" class="debug-row">
+        <span class="debug-key">触发链</span>
+        <span v-for="(e, i) in hud.machine.tap" :key="'t' + i" class="debug-pair dim">
+          {{ e.t.toFixed(1) }} {{ e.line }}
+        </span>
       </div>
       <div v-if="hud.machine.machines.length" class="debug-row">
         <span class="debug-key">参数</span>
@@ -130,5 +146,10 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'reset'])
 /* 非默认残留读数弱化（连续摆位的遗留值，非门控参数） */
 .debug-pair.dim {
   color: #6f9f88;
+}
+
+/* 异常态读数（播放中滞留等）：暖色提示一眼可辨 */
+.debug-pair.warn {
+  color: #e8b06f;
 }
 </style>

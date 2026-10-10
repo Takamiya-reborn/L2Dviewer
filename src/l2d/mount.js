@@ -81,7 +81,7 @@ async function mountModelInner(ctx, url) {
     return
   }
   ctx.runtime = new InteractionRuntime(model, interaction)
-  // 拖拽参数机：数据与模型同目录（<id>.l2d.json，bake_l2d.py 烘焙产物）；
+  // 拖拽参数机：数据与模型同目录（<id>.l2d.json，extract.py 烘焙产物）；
   // 播放回调解析 clip 名 -> 动作组（白名单里存的是 clip 名，如 touch_idle1、
   // idle1），机器分区命中后由编排器接管路由
   const l2dConfig = await loadL2dConfig(url)

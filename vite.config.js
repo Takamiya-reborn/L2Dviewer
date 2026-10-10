@@ -15,7 +15,7 @@ const MIME = {
 
 /**
  * 扫描 models/<角色>/<皮肤>/<皮肤>.model3.json，生成皮肤清单。
- * 显示名取 <皮肤>.l2d.json 的 name（bake_l2d.py 烘焙的游戏内皮肤名），
+ * 显示名取 <皮肤>.l2d.json 的 name（extract.py 烘焙的游戏内皮肤名），
  * 没有烘焙文件的皮肤回退目录名。新增皮肤把目录丢进 models/ 刷新页面即生效。
  */
 function scanModels(modelsDir) {

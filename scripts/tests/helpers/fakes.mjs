@@ -4,6 +4,19 @@
  */
 
 /**
+ * node 无 localStorage，stub 一个内存版（DragMachine 的 saveValue/loadValue 依赖）。
+ * 各测试文件统一用这份，不再各写内联副本。
+ */
+export function stubLocalStorage() {
+  const store = new Map()
+  globalThis.localStorage = {
+    getItem: (k) => store.get(k) ?? null,
+    setItem: (k, v) => store.set(k, String(v)),
+  }
+  return store
+}
+
+/**
  * 假 Cubism coreModel。
  * @param params 参数表 { 参数id: { default, min, max, value? } }
  * @param opts.opacities drawable 不透明度表（给定时附加 getDrawableOpacity，

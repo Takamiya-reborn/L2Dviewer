@@ -14,6 +14,18 @@ export async function loadL2dConfig(modelUrl) {
 /**
  * 编排器：持有全部机器、idle 变体号与动作白/黑名单（游戏 Live2D 类的路由面）。
  *
+ * == 编排器级状态契约（属主 × 写入点 × 复位责任） ==
+ * | 变量                    | 写入点                                         | 复位时机            |
+ * | machineAble（按压锁）   | pressLock 唯一入口（写入方全集：machine.onDown/applyClickTrigger/onUp/onCancel/step 窗口作废、triggers.js type3×4+type8、resetAll）；setMachineAble 仅供测试拦截与 pressLock 落底 | pressLock(…,false) 各收尾路径 / resetAll |
+ * | isPlaying/playActionName| noteMotionStart 置真（仅非 idle）/noteMotionFinish 清 | resetAll；滞留即锁死一切点击（HUD playing 读数） |
+ * | enablePlayActions/ignorePlayActions | applyActiveData 唯一写（enable 在场即遮蔽 idle_enable，原文 #x>=0 恒真语义） | resetAll |
+ * | idleIndex               | changeIdleIndex 唯一写（resetAll 直接置 0）     | resetAll            |
+ * | _lastStartIdle          | noteMotionStart 记，noteMotionFinish 用         | resetAll            |
+ * | activeOwner             | applyActiveData 落账（HUD 读数）                | resetAll            |
+ *
+ * 机器级状态（_active/isTriggerAtion/nextTriggerTime/…）契约见 machine.js 头
+ * 注释；写机器状态前先查那张表。
+ *
  * @param model pixi Live2DModel
  * @param config loadL2dConfig 的结果
  * @param playAction (clipName) => boolean 播放回调，L2dStage 提供：解析
@@ -73,6 +85,17 @@ export class DragOrchestrator {
   }
 
   /**
+   * 分区的路由优先级键：该分区在注册名单里的最早位置（机器按 ship_l2d 条目
+   * 序构建）。游戏 GetDragPart（C#）对全部射线命中取"DragParts 名单下标最大
+   * 者胜"——名单 = assistantTouchParts 排最前 + 条目序的 draw_able_name，
+   * FindIndex 取首现位置，故这里同样取最早注册序作比较键。
+   */
+  zoneOrder(zoneName) {
+    const first = this.machinesForZone(zoneName)[0]
+    return first ? this.machines.indexOf(first) : -1
+  }
+
+  /**
    * 分区可交互状态（HUD 着色）：同名分区常挂多台机器（wuzang_3 的
    * TouchDrag2 挂充能 + 双联动 + 长按 4 台），任意一台可响应即算可交互；
    * 全部被挡时红、全部类型未实现时橙
@@ -82,11 +105,29 @@ export class DragOrchestrator {
     if (!ms.length) return null
     let blocked = false
     for (const m of ms) {
-      const s = m.interactable()
+      let s = m.interactable()
+      if (s === true) {
+        // 机器自身可触发还不够：动作还得过白名单（游戏 checkEnablePlay 前置
+        // 于播放）——shengluyisi_5 梯子中间态下 drag13:19 的点曾因不查名单
+        // 恒绿，点了才在触发链里看到"被拦下"，提示层把人往死点上引
+        if (!this.actionPassable(m)) s = false
+      }
       if (s === true) return true
       if (s === false) blocked = true
     }
     return blocked ? false : null
+  }
+
+  /** 机器本次触发将播的动作能否过白名单；空触发机（circle/target）不播动作，
+      白名单无关，恒可过。type 6 取当前下标的条目，随机数组任一项可过即可 */
+  actionPassable(m) {
+    const at = m.actionTrigger
+    if (!at) return true
+    let action = Array.isArray(at.action_list) && at.action_list.length
+      ? at.action_list[Math.min(Math.max(m.actionListIndex, 1), at.action_list.length) - 1]?.action
+      : at.action
+    if (Array.isArray(action)) return action.some((a) => a && this.checkEnablePlay(a))
+    return !action || this.checkEnablePlay(action)
   }
 
   /** 读模型参数实时值（游戏 EVENT_GET_PARAMETER：GetCubismParameter 缺失回 0）。
@@ -95,6 +136,17 @@ export class DragOrchestrator {
     const idx = this.paramIndex(pid)
     if (idx < 0) return 0
     return this.model.internalModel.coreModel.getParameterValueByIndex(idx)
+  }
+
+  /** type 12 扩展门的参数值源（游戏 EVENT_GET_DRAG_PARAMETER CT:347-358）：
+      按 parameterName 在机器里匹配，取该机 parameterValue（机器当前值），
+      后注册者胜出，无匹配默认 0——不是模型实时值、不是 targetValue */
+  readDragParameter(pid) {
+    let v = 0
+    for (const m of this.machines) {
+      if (m.parameterName === pid) v = m.parameterValue
+    }
+    return v
   }
 
   // ---- 指针事件分发（L2dStage 调用；返回是否被机器消费）----
@@ -113,7 +165,9 @@ export class DragOrchestrator {
   }
 
   onMove(pos) {
-    if (!this.machineAble) return
+    // 移动路由只按 _active（游戏 updateDrag DD:688+ 遍历按压中的机器）：
+    // machineAble 是播放闸不是移动闸——down 配置型/type4 按压期间原文不上锁，
+    // 挪用锁当移动门会把它们的拖动整个掐掉
     for (const m of this.machines) if (m._active) m.onMove(pos)
   }
 
@@ -136,7 +190,19 @@ export class DragOrchestrator {
 
   // ---- 动作播放路由（游戏 checkEnablePlay + playAction + applyActiveData）----
 
-  /** 机器按压期间屏蔽反应动作（游戏 EVENT_ACTION_ABLE：按下置真，收尾/取消置假） */
+  /**
+   * 按压锁唯一写入口（游戏 setAbleWithFlag DD:1316-1324 的语义：幂等值守卫 +
+   * 变迁广播）。锁滞留 = 一切播放被 machineAble 拦死，触发链里只剩"被机器
+   * 按压拦下"却没有来由——reason 留痕让最后一条"按压锁→开"直接点名是哪次
+   * 按压把锁带走的。全部写入方必须走这里，禁止直改 machineAble。
+   */
+  pressLock(reason, able) {
+    if (this.machineAble === able) return
+    this.debug?.(`按压锁→${able ? '开' : '关'}(${reason})`)
+    this.setMachineAble(able)
+  }
+
+  /** 裸 setter：供测试 monkeypatch 拦截与 pressLock 落底，不留痕 */
   setMachineAble(able) {
     this.machineAble = able
   }
@@ -149,16 +215,42 @@ export class DragOrchestrator {
       白名单实现的，idle 同样越过它，故豁免放最前 */
   checkEnablePlay(actionName) {
     if (actionName === 'idle') return true
+    // type 12 扩展门（CT:176-188）：先于白/黑名单——任一 extend 机 ignore
+    // 命中即拦、enable 命中即直通。原文 ableFlag 以白名单实现，直通同样
+    // 越过按压锁；真实配置（shengluyisi_5）只用 ignore 屏蔽，enable 直通
+    // 撬锁属原文潜在形态
+    for (const m of this.machines) {
+      if (!m.extendActionFlag) continue
+      const verdict = m.checkActionInExtend(actionName)
+      if (verdict === 'block') return false
+      if (verdict === 'pass') return true
+    }
     if (this.machineAble) return false
     if (this.enablePlayActions.length && !this.enablePlayActions.includes(actionName)) return false
     if (this.ignorePlayActions.includes(actionName)) return false
     return true
   }
 
-  /** 诊断钩子：舞台侧注入 debugHook 后，触发链关键步
-      写入 tap 日志（拒按/点击判定/豁免/播放结果/名单写入） */
+  /** 诊断钩子：舞台侧注入 debugHook 后，触发链关键步写 console（既有消费方）；
+      同时落环形缓冲 tapLog（上限 12 条，带 [s] 时间戳），供 HUD 面板读链路
+      （拒按/点击判定/豁免/窗口作废/播放结果/名单写入）——"点了没反应"时按
+      最后一条判定卡在哪道门 */
   debug(line) {
+    ;(this.tapLog ??= []).push({ t: performance.now() / 1000, line })
+    if (this.tapLog.length > 12) this.tapLog.shift()
     this.debugHook?.(line)
+  }
+
+  /**
+   * 联动广播（游戏 onListenerHandle → live2ddrag onListenerEvent）：全部机器
+   * 无差别收到。有消费方的事件只有两类：PLAY(1)（CT:288 播放成功后）与
+   * CHANGE_IDLE(3)（changeIdleIndex）。DRAG_CLICK(2)/DOWN/XY_TRIGGER/
+   * DRAG_TRIGGER 四类在原文是死路径——EVENT_ACTION_APPLY 成功回调实参恒
+   * nil（CT:269/305），监听层永远收不到，不发；ON_ACTION_PARAMETER 在
+   * 3759 条配置里零监听者，不发。
+   */
+  notice(type, data) {
+    for (const m of this.machines) m.onListenerEvent(type, data)
   }
 
   /**
@@ -179,14 +271,24 @@ export class DragOrchestrator {
             ? `,名单→${activeData.enable.length}项`
             : ',名单不变'),
       )
-      if (played) this.applyActiveData(machine.id, activeData, true)
+      if (played) {
+        // 游戏在 checkEnablePlay 通过后、applyActiveData 之前发 PLAY 通知
+        // （live2d.lua:288）：type 1 监听机在此改 target/换挡
+        this.notice(1, { action })
+        this.applyActiveData(machine.id, activeData, true)
+      }
     } else {
       this.applyActiveData(machine.id, activeData, true)
     }
   }
 
-  /** 应用 activeData：白/黑名单 + idle 变体切换（游戏 applyActiveData） */
-  applyActiveData(machineId, activeData, save) {
+  /**
+   * 应用 activeData：白/黑名单 + idle 变体切换（游戏 applyActiveData）。
+   * @param payloadIdle 事件负载里的 idle（联动层 EVENT_CHANGE_IDLE_INDEX 的
+   *   负载值）：activeData.idle 缺省时回落到它（游戏 slot7 = activeData.idle
+   *   or payload.idle）；idle_enable/idle_ignore 按这个变体号取对应名单。
+   */
+  applyActiveData(machineId, activeData, save, payloadIdle = null) {
     if (!activeData) return
     // Lua 空表经 bake 序列化成 {} 而非 []：enable/ignore 是序列名单，空表 =
     // 清空白/黑名单，游戏 setEnableActions({}) 照常落账——只认 isArray 会把
@@ -194,28 +296,59 @@ export class DragOrchestrator {
     // 永久滞留在 touch_idle 链的 48 项上（实测即"走完状态机 touch_body 仍被拦"）
     const asList = (v) =>
       Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : null
+    // 目标变体号（原始值）：idle_enable/idle_ignore 的按变体匹配用它——
+    // 数组 idle（随机挑选）在游戏里跟数字变体号永远不相等，等价于不生效，
+    // 原样保留这个语义
+    const rawIdle = activeData.idle ?? payloadIdle
+    let idle = rawIdle
     const enable = asList(activeData.enable)
-    if (enable) this.enablePlayActions = enable
+    if (enable) {
+      this.enablePlayActions = enable
+      // 落账机器追踪（HUD 读数）：白名单与 idle 由同一台机的 activeData 写入，
+      // 排查"名单是谁的/idle 为何没动"时直接点名，不用再靠 15 项反推
+      this.activeOwner = machineId
+    } else if (Array.isArray(activeData.idle_enable)) {
+      // 按变体号取白名单（游戏 idle_enable 分支）：[[变体号,名单],...] 中
+      // 匹配目标变体的那条生效；enable 在场时本分支整个不走（游戏 if/elseif）
+      for (const [variant, list] of activeData.idle_enable) {
+        if (variant === rawIdle) {
+          this.enablePlayActions = asList(list) ?? []
+          this.activeOwner = machineId
+        }
+      }
+    }
     const ignore = asList(activeData.ignore)
     if (ignore) this.ignorePlayActions = ignore
-    let idle = activeData.idle ?? null
+    else if (Array.isArray(activeData.idle_ignore)) {
+      for (const [variant, list] of activeData.idle_ignore) {
+        if (variant === rawIdle) this.ignorePlayActions = asList(list) ?? []
+      }
+    }
     if (Array.isArray(idle) && idle.length) {
       // 数组 idle：随机挑一个；不开 repeat_flag 时剔除当前值（游戏 applyActiveData）
       const pool = activeData.repeat_flag ? idle : idle.filter((n) => n !== this.idleIndex)
       idle = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null
     }
-    if (idle != null && typeof idle === 'number' && idle !== this.idleIndex) {
+    if (idle != null && typeof idle === 'number') {
+      // 无 idleIndex 相等守卫：原文 CT:1159 的守卫比较的是恒 nil 的 indexIndex
+      //（反编译笔误），条件恒真——同值也走 changeIdleIndex（同值时广播照发、
+      // 机器不复位，见 changeIdleIndex）
       this.changeIdleIndex(idle, save)
       if (save) this.saveValue('__action', machineId)
     }
   }
 
   changeIdleIndex(n, save = true) {
-    if (this.idleIndex === n) return
+    const changed = this.idleIndex !== n
     this.idleIndex = n
     // 变体切换广播给机器：revert_idle_index 名单内的机器整体复位（游戏
-    // updateStateData 的 revertIdleIndex 分支）
-    for (const m of this.machines) m.onIdleChanged(n)
+    // updateStateData 的 revertIdleIndex 分支）。复位整体在
+    // `l2dIdleIndex ~= idleIndex` 守卫内（DD:1355）——同值广播不复位
+    if (changed) for (const m of this.machines) m.onIdleChanged(n)
+    // CHANGE_IDLE 通知（游戏 changeIdleIndex 的 onListenerHandle）无条件发
+    //（CT:1206-1224，同值也发，idle_change 标志监听机不消费）：type 3 监听机
+    // 同值也按变体号改 target
+    this.notice(3, { idle: n })
     if (save) {
       this.saveValue('__idle', n)
       if (n === 0) this.saveValue('__action', 0)
@@ -243,16 +376,15 @@ export class DragOrchestrator {
       this.isPlaying = true
       this.playActionName = clipName
     }
-    // 动作起播后机器进短冷却（游戏 onListenerTrigger ON_ACTION_PLAY）：游戏
-    // 是无条件覆写 nextTriggerTime = min(limitTime, 0.2)——触发时先设的
-    // limitTime（默认 4s）冷却会被真正播出的动作塌缩回 0.2s，只在"触发被
-    // 重复 idle 豁免/播放失败"等不产出 ON_ACTION_PLAY 的场合才足额生效。
-    // 若只抬高不清零，触发过的分区会死满 4s（实测即"绿色却点不动"）。
-    // 游戏只在 Lua 层动作播出（apply 处理器）时通知，idle 循环重启不算
-    if (!idle) {
-      for (const m of this.machines) {
-        m.nextTriggerTime = Math.min(m.limitTime, 0.2)
-      }
+    // 动作起播后机器进短冷却（游戏 onListenerTrigger ON_ACTION_PLAY，DD:211）：
+    // 游戏是无条件覆写 nextTriggerTime = min(limitTime, 0.2)，且广播源 CT:288
+    // 对一切播出成功生效——含 idle（挂载起播、FinishAction 尾部 changeActionIdle
+    // 收尾重播、变体切换重播）。触发时先设的 limitTime（默认 4s）冷却会被真正
+    // 播出的动作塌缩回 0.2s，只在"触发被重复 idle 豁免/播放失败"等不产出
+    // ON_ACTION_PLAY 的场合才足额生效。若只抬高不清零，触发过的分区会死满 4s
+    // （实测即"绿色却点不动"）。pixi 的 motionStart 只在动作启动时发、循环不重发
+    for (const m of this.machines) {
+      m.nextTriggerTime = Math.min(m.limitTime, 0.2)
     }
   }
 
@@ -366,13 +498,14 @@ export class DragOrchestrator {
     for (const m of this.machines) m.reset()
     // 按压锁一并清掉：machineAble 置真后若没走到任何清假路径（如按压中
     // 复位），checkEnablePlay 恒假会连"重置交互"自己的重播一起拦死
-    this.setMachineAble(false)
+    this.pressLock('重置交互', false)
     this.idleIndex = 0
     this.isPlaying = false
     this.playActionName = ''
     this._lastStartIdle = false
     this.enablePlayActions = []
     this.ignorePlayActions = []
+    this.activeOwner = 0
   }
 
   /** HUD 读数：idle 变体号、白名单规模、按住中的机器、各机器参数实时值、
@@ -393,10 +526,24 @@ export class DragOrchestrator {
     return {
       idle: this.idleIndex,
       whitelist: this.enablePlayActions.length,
+      // 名单里的 touch_idle 子集（紧凑记法 t17+t19）：唯一识别落账机器——
+      // #16 的名单是 17+19，#19 收尾后是 2+4，收尾机空名单显示 空
+      wlIdle: this.enablePlayActions
+        .filter((c) => /^touch_idle/.test(c))
+        .map((c) => c.slice('touch_idle'.length))
+        .join('+'),
+      // 最近一次写入白名单的机器 key 尾号（0 = 尚无落账）
+      actor: this.activeOwner ?? 0,
       able: this.machineAble,
+      // 反应动作播放中标记：卡死排查的关键读数——ignore_action 机器在播放中
+      // 拒按、点击判定同样放行不了，isPlaying 若在动作结束后仍滞留真值即锁死
+      playing: this.isPlaying,
+      playName: this.playActionName,
       active: active ? active.drawAbleName : null,
       machines,
       relations,
+      // 触发链最近读数（副本：ticker 每帧调 hudInfo，避免展示层持同引用）
+      tap: (this.tapLog ?? []).slice(-6),
     }
   }
 }

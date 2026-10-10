@@ -8,6 +8,7 @@ import { createActions } from '../l2d/actions'
 import { mountModel } from '../l2d/mount'
 import { createGestures } from '../l2d/gestures'
 import { createTickerCallback } from '../l2d/hud'
+import { createClickEffect } from '../l2d/clickEffect'
 import HudPanel from './debug/HudPanel.vue'
 
 const props = defineProps({
@@ -23,6 +24,10 @@ const status = ref('正在初始化舞台…')
 const currentMotion = ref('')
 // 交互点提示（utils/interaction 的 hints 覆盖层）开关
 const showHints = ref(true)
+// 触点涟漪（游戏"触点特效"的复刻，l2d/clickEffect.js）开关；
+// 与游戏 SHOW_TOUCH_EFFECT 同语义（默认开），localStorage 持久化
+const showRipple = ref(localStorage.getItem('l2d.showClickRipple') !== '0')
+watch(showRipple, (v) => localStorage.setItem('l2d.showClickRipple', v ? '1' : '0'))
 // 调试信息（状态机 HUD 读数）独立于交互点开关；hud 为结构化数据
 const showDebug = ref(true)
 const hud = ref(null)
@@ -30,6 +35,7 @@ const hud = ref(null)
 const hasOrch = ref(false)
 
 let app = null
+let rippleCtl = null
 let resizeObserver = null
 let dprQuery = null
 let view = null
@@ -119,6 +125,9 @@ onMounted(async () => {
   // 末参取编排器：提示标签按 l2d.json 显示分区驱动的参数（网格名与反应
   // 编号在部分皮肤是错位的，如 shengluyisi_5 的 TouchDrag23 -> touch_drag25）
   ctx.hintsCtl = createInteractionHints(app, () => ctx.runtime, () => showHints.value, () => ctx.orch)
+  // 触点涟漪：独立于模型，只依赖 canvas 指针事件；update 走同一 ticker
+  rippleCtl = createClickEffect(app, view, () => showRipple.value)
+  app.ticker.add(() => rippleCtl.update(app.ticker.deltaMS / 1000))
   app.ticker.add(createTickerCallback(ctx))
   // ResizeObserver 兼顾窗口变化与容器变化（如侧栏收起/展开）
   resizeObserver = new ResizeObserver(() => ctx.camera.fitModel())
@@ -137,6 +146,8 @@ onBeforeUnmount(() => {
   dprQuery = null
   resizeObserver?.disconnect()
   resizeObserver = null
+  rippleCtl?.destroy()
+  rippleCtl = null
   ctx.hintsCtl?.destroy()
   ctx.model?.destroy()
   app?.destroy(true)
@@ -154,9 +165,9 @@ defineExpose({ play: (group) => ctx.actions.playMotion(group) })
 <template>
   <div class="stage">
     <div ref="canvasHost" class="canvas-host" />
-    <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :has-orch="hasOrch"
+    <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :has-orch="hasOrch" :show-ripple="showRipple"
       @toggle-hints="showHints = !showHints" @toggle-debug="showDebug = !showDebug"
-      @reset="actions.resetInteraction()" />
+      @toggle-ripple="showRipple = !showRipple" @reset="actions.resetInteraction()" />
     <p v-if="status" class="status">{{ status }}</p>
   </div>
 </template>
