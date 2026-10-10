@@ -20,6 +20,7 @@
 import fs from 'fs'
 import path from 'path'
 import { loadMocModel } from '../helpers/cubism.mjs'
+import { resolveModelDir } from './model_probe.mjs'
 
 const args = process.argv.slice(2)
 const flag = (name) => {
@@ -36,9 +37,7 @@ if (!target) {
   process.exit(1)
 }
 
-const dir = fs.existsSync(target) && fs.statSync(target).isDirectory()
-  ? target
-  : path.dirname(target)
+const dir = resolveModelDir(target)
 const loaded = await loadMocModel(dir)
 const model = loaded.model
 const l2dFile = path.join(dir, `${loaded.name}.l2d.json`)

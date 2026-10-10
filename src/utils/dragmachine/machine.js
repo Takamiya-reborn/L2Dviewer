@@ -188,8 +188,9 @@ export class DragMachine {
   /** 游戏触发入口（onEventCallback EVENT_ACTION_APPLY 的 action 分支）。
       触发冷却/连点下标的推进都按游戏 apply 块的分支顺序落账：先取本次
       action 与 activeData（type 6 从 action_list 按 actionListIndex 取并推进
-      下标），再过重复 idle 豁免，最后才是 circle/target 与播放 */
-  applyTrigger() {
+      下标），再过重复 idle 豁免，最后才是 circle/target 与播放（async：等待
+      引擎真实播放结果后才应用 activeData） */
+  async applyTrigger() {
     const at = this.actionTrigger
     if (!at) return
     let activeData = this.actionTriggerActive
@@ -245,7 +246,7 @@ export class DragMachine {
     }
     if (at.focus === 1) this.isTriggerAtion = false
     // 播放与否决定 activeData 是否应用（游戏 playAction 失败即不应用）
-    this.orch.onActionApply(this, action, activeData)
+    await this.orch.onActionApply(this, action, activeData)
   }
 
   filterAction(action) {
@@ -544,7 +545,7 @@ export class DragMachine {
    * HUD 读数用：当前状态下命中本分区是否会有响应。纯查询（不推进冷却、
    * 不改状态），供交互点提示按真实路由着色——机器分区不走 interaction.json
    * 的参数门控，红绿必须按机器自己的触发条件判定。返回 true 可交互 /
-   * false 被冷却·单触发·播放中·重复 idle 豁免挡下 / null 触发类型未实现。
+   * false 被冷却·单触发·播放中·重复 idle 豁免·点参档位挡下 / null 触发类型未实现。
    */
   interactable() {
     const at = this.actionTrigger
@@ -559,6 +560,12 @@ export class DragMachine {
     // 数组 action 与游戏一致按不等处理）
     if (this.orch.isPlaying && !(at.focus === 1 && this.orch.playActionName === at.action)) {
       return false
+    }
+    // type 9 点参：他参不贴近 num（±0.05）时白点（与 applyClickTrigger 同判据，
+    // 读模型实时值）——档位不满足的机器画绿会误导成"绿了点不动"
+    if (at.type === 9) {
+      const v = this.orch.readParameter(at.parameter ?? this.parameterName)
+      if (v == null || Math.abs((at.num ?? 0) - v) > 0.05) return false
     }
     // 重复 idle 豁免：目标 idle 与当前相同且未开 repeat_flag 时整个触发跳过
     const idle = this.actionTriggerActive?.idle
@@ -584,6 +591,7 @@ export class DragMachine {
 
   /** 全量复位（游戏 clearData，对应"重置交互状态"） */
   reset() {
+    this._active = false // 按压中的机器一并松开（编排器 resetAll 调用）
     this.clickTriggerTime = null
     this.parameterToStart = null
     this.isTriggerAtion = false

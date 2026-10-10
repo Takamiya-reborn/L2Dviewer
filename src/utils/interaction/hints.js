@@ -7,8 +7,8 @@
  *
  * 红绿判定按真实路由分家：机器分区（ship_l2d 有 draw_able_name 匹配）由
  * 拖拽参数机接管，不查 interaction.json 的参数门控——颜色按机器自身的
- * 可触发条件（冷却/单触发/播放中/重复 idle 豁免，取编排器路由到的那台，
- * 与游戏 GetDragPart 的"注册顺序第一台赢"一致）判定；无机器的分区
+ * 可触发条件（冷却/单触发/播放中/重复 idle 豁免/type 9 点参档位，取编排器
+ * 路由到的那台，与游戏 GetDragPart 的"注册顺序第一台赢"一致）判定；无机器的分区
  * （touch_head/body 等 C# 路径）才按起播门控（canPlay）判定。两种判据
  * 混用会把"机器照样能拖"的分区画红、"未实现触发类型/冷却中"的分区画绿。
  *
@@ -49,6 +49,9 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
     const found = []
     for (const m of orch.machines) {
       if (String(m.drawAbleName).toLowerCase().replace(/[^a-z0-9]/g, '') !== key) continue
+      // mode 2 联动机本机 parameter 为空串（动的是 relation 参数），不进标签，
+      // 否则拼出 "touch_drag1++empty2" 这样的空档
+      if (!m.parameterName) continue
       if (!found.includes(m.parameterName)) found.push(m.parameterName)
     }
     return found.length ? found.join('+') : null
@@ -117,9 +120,11 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         h.dot.clear()
         // 颜色按真实路由判定（见函数注释）：机器分区看参数机的可触发条件
         // （同名多机时任意一台可响应即绿），其余分区看 interaction.json 的
-        // 起播门控；橙 = 触发类型未实现
-        const hasMachine = params && orch?.machinesForZone(h.name).length
-        const state = params ? orch?.zoneInteractable(h.name) : null
+        // 起播门控；橙 = 触发类型未实现。机器判定不能挂在 params 上——
+        // type 9 点参机的 parameter 为空（读的是他参），wuzang_3 的
+        // TouchDrag3/TouchIdle2 六档机曾因此漏判、恒按 canPlay 画绿
+        const hasMachine = !!orch?.machinesForZone(h.name).length
+        const state = hasMachine ? orch.zoneInteractable(h.name) : null
         const color =
           state === true || (!hasMachine && runtime.canPlay(h.name))
             ? 0x4fc08d
@@ -184,7 +189,7 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
       }
       const state = [...runtime.statePids].map((pid) => [
         pid,
-        Math.round(runtime.paramValue(pid)),
+        Number(runtime.paramValue(pid).toFixed(2)),
       ])
       // 连续摆位只报节点里的非默认残留（实时值被逐帧曲线扰动，不适合读数）
       const carried = [...runtime.carryPids]

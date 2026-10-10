@@ -14,11 +14,17 @@ scripts/tests/
 ├── probe/                # 一次性探针 CLI（不进 run_all，见下文）
 │   ├── moc3_params.mjs   # moc3 参数表 dump + l2d.json 交叉核对
 │   ├── hit_areas.mjs     # HitAreas 解析 + 机器分区归一化核对
+│   ├── simulate.mjs      # 交互管线场景重放（点击/等待/复位 → 状态 dump + 应然态对比）
+│   ├── pose_diff.mjs     # 参数姿态假设的几何对比（包围盒 + 顶点位移排名）
 │   └── pixi_events.mjs   # pixi 事件管线探针归档（打印浏览器探针代码）
 └── helpers/
     ├── suite.mjs         # check/finish 断言套件（ok/FAIL 行 + 退出码）
     ├── fakes.mjs         # 假 coreModel / 假 pixi 模型工厂
-    └── cubism.mjs        # node 下加载 Cubism Core + moc3 模型
+    ├── cubism.mjs        # node 下加载 Cubism Core + moc3 模型
+    ├── model_files.mjs   # 皮肤目录解析 / JSON 读取（model_probe.mjs 转出口）
+    ├── motion3.mjs       # motion3 曲线采样 + interaction clip 取值
+    ├── sim.mjs           # 全管线仿真 harness（真实 runtime/orchestrator/actions）
+    └── geometry.mjs      # drawable 顶点快照 / 包围盒 / 位移排名
 ```
 
 单独跑某一支：`node scripts/tests/test_dragmachine.mjs`，或过滤：
@@ -98,6 +104,53 @@ wuzang_3 画布 8000×8000，背景板级判定区数值天然巨大），并与
 draw_able_name 按运行时同规则归一化核对——标出"HitAreas 无同名分区、
 机器路由不会命中"与"触摸系分区却无机器接管"两类错位。屏幕 px / 占视口
 高比例依赖实时取景，静态探针不可复算，只出画布 px。
+
+### simulate.mjs — 交互管线场景重放
+
+```
+node scripts/tests/probe/simulate.mjs <皮肤目录> \
+  --scene "wait:0.5 click:TouchIdle1 wait:4.5 click:TouchIdle4 wait:13" \
+  [--tap] [--param Pid,...] [--game "touch_idle4 idle4@0"]
+```
+
+用真实 InteractionRuntime + DragOrchestrator + createActions 代码 + 真实
+moc3/motion3 资产，在 node 里按 60fps 重放 viewer 的帧循环
+（restoreLayer -> motion 曲线 -> applyLayer），装配顺序与 mount.js 对齐。
+排查"点了没反应 / 播错动作 / 特殊待机扭曲 / 复位不干净"这类运行时问题
+先跑这个。
+
+- `--scene` 步骤：`wait:<sec>` 播放、`click:<zone>[:hold]` 点区域
+  （hold 默认 0.15）、`reset` 调 ctx.actions.resetInteraction()。
+- `--tap` 打印 orchestrator 的 [tap] 调试行；`--param` 末尾追加打印参数值。
+- `--game "<clip> <motion>[@<t>]"` 与游戏应然态逐参数对比：应然态 =
+  clip 的 state/carry 节点尾值 + 变体 motion 曲线@t；clip/motion 未覆盖
+  的参数以 moc3 默认值为应然态，机器把开关写偏（如默认 1 被写成 0）也
+  能暴露。
+
+例（fulici_2 复位场景）：`--scene "wait:0.5 click:TouchIdle1 wait:4.5
+click:TouchIdle4 wait:11 reset wait:0.5"`——复位全绿的判据是 pending=idle、
+idleIndex=0、白名单=0、isNeutral=true、节点无残留。
+
+### pose_diff.mjs — 参数姿态几何对比
+
+```
+node scripts/tests/probe/pose_diff.mjs <皮肤目录> \
+  --pose "S_GAME: clip=touch_idle4 motion=idle4@0" \
+  --pose "H1: clip=touch_idle4 motion=idle@0" \
+  --pose "H3: clip=touch_idle4 carry=0 motion=idle4@0" \
+  [--diff 1,2]
+```
+
+按「节点尾值 + motion 曲线@t + 手工覆盖」构造若干候选参数态，对真实
+moc3 逐个 update，打印各姿态的网格包围盒（全部/可见两行），以及各姿态
+vs 第一个姿态（基准）的按 drawable 顶点最大位移排名——定位"扭曲/错位"
+来自哪个参数态假设。
+
+姿态 spec：`clip=<name>` 节点尾值（state+carry 的 end）；`carry=0` /
+`state=0` 掐掉对应来源；`start=<name>` 改用另一 clip 的衔接首值；
+`motion=<name>[@<t>]` 叠加曲线采样（t 默认 0，`@end` = 末帧-1/30）；
+`set=Pid=v,...` 手工覆盖。`--diff` 指定参与对比的姿态序号（0 起），
+默认全部非基准姿态。
 
 ### pixi_events.mjs — pixi 事件管线探针（归档）
 

@@ -11,6 +11,14 @@ import { MotionPriority } from 'pixi-live2d-display/cubism4'
  * @returns {{ playMotion, idleGroupIndex, resetInteraction, playLuaAction, handleHitAreas }}
  */
 export function createActions(ctx) {
+  /** 引擎侧拒绝（MotionState.reserve：同动作已在播/已预留等）只静默回 false，
+      这里补一条告警，供实机排查"点了没反应/复位后没重播" */
+  function watchRejection(promise, label) {
+    Promise.resolve(promise).then((ok) => {
+      if (!ok) console.warn('[l2d] 动作播放被引擎拒绝:', label)
+    })
+  }
+
   /** 供外部（状态触发面板）直接播放指定动作组 */
   function playMotion(group) {
     const model = ctx.model
@@ -25,7 +33,7 @@ export function createActions(ctx) {
     // 门控（与游戏一致，如 login 的起播边界在干净默认态下也不满足）；但状态
     // 转移照常入账——interaction.js 在 motionManager 的 motionStart/motionFinish
     // 上统一跟踪所有动作，无论触发来源。
-    model.motion(group, idleGroupIndex(group), MotionPriority.FORCE)
+    watchRejection(model.motion(group, idleGroupIndex(group), MotionPriority.FORCE), group)
   }
 
   // 面板触发 idle 组时按当前变体解析（游戏 SetInteger("idle") 播当前变体
@@ -48,7 +56,17 @@ export function createActions(ctx) {
     const orch = ctx.orch
     if (!orch || !ctx.model) return
     orch.resetAll()
+    // 先清图跟踪（pending 归空）：stopAllMotions 引出的 motionFinish 会对
+    // 空挂起做 applyEnd(null) 幂等空转，不会把旧动作的结束值写回复位后的节点
     ctx.runtime?.resetState()
+    // 参数直写复位：原来只靠"重播 idle -> motionStart -> resetParameters"
+    // 这条间接链，但循环 idle 永不 finish、currentGroup 常驻，重播同支 idle
+    // 会被引擎 MotionState.reserve 的 "Motion is already playing" 拒绝
+    // ——motionStart 不来，复位永远不跑，参数残留 + 姿态扭曲死锁（实测
+    // "重置交互后 HUD 状态行开关仍全 1、动作行（无挂起）"）。这里直写一次，
+    // 再停掉在播动作让下面的重播能过 reserve
+    ctx.runtime?.resetParameters()
+    ctx.model.internalModel.motionManager.stopAllMotions()
     playLuaAction(orch.idleClipFor(0))
   }
 
@@ -57,9 +75,10 @@ export function createActions(ctx) {
    * 白名单/黑名单在这里前置检查（游戏 checkEnablePlay 对一切播放生效）；
    * 名单存的是 clip 名（touch_idle1、idle1 等），组名与 clip 名不一致时
    * （touch_idleN 收在 touch_idle 组、idleN 收在 idle 组）按文件名反查组内下标。
-   * @returns {boolean} 是否真的播了（不存在/被白名单拦下返回 false）
+   * @returns {Promise<boolean>} 是否真的播了（不存在/被白名单拦下/被引擎
+   *   MotionState 拒绝——如重播正在循环的同支 idle——都返回 false）
    */
-  function playLuaAction(clipName) {
+  async function playLuaAction(clipName) {
     const orch = ctx.orch
     if (!orch) return false
     if (!orch.checkEnablePlay(clipName)) {
@@ -84,6 +103,18 @@ export function createActions(ctx) {
         (d) => (d.File ?? '').split('/').pop()?.replace(/\.motion3\.json$/, '') === want,
       )
       if (i >= 0) index = i
+      // HUD 读数（ctx.idleFallback）：显式路由与引擎回落（motionPatches 写
+      // source: 'engine*'）区分来源，变体选错时动作行旁直接可见路由依据
+      if (clipName === ctx.runtime?.idleGroup) {
+        ctx.idleFallback = {
+          source: 'explicit',
+          clip: want,
+          index: i,
+          variant: orch.idleIndex,
+          degraded: i < 0,
+          at: Date.now(),
+        }
+      }
     } else {
       for (const [g, defs] of Object.entries(motions)) {
         const i = (defs ?? []).findIndex(
@@ -101,8 +132,12 @@ export function createActions(ctx) {
       return false
     }
     ctx.currentMotion.value = group
-    ctx.model.motion(group, index, MotionPriority.FORCE)
-    return true
+    // 等引擎的真实结果：MotionState.reserve 拒绝（重播在循环的同支 idle、
+    // 预留被抢等）只静默回 false——调用方（onActionApply）必须拿到 false
+    // 才不会把 activeData（idle 变体号/白名单）记到一次没播出去的动作上
+    const ok = await ctx.model.motion(group, index, MotionPriority.FORCE)
+    if (!ok) console.warn('[l2d] 动作播放被引擎拒绝:', `${group}[${index}]`)
+    return !!ok
   }
 
   /** 命中分区 -> 播放对应动作（model 'hit' 事件与 onPointerUp 精确路径共用） */

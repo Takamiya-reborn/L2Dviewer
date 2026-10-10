@@ -95,7 +95,10 @@
   时他参贴近 `num` ±0.05；relation 联动参数实现 101/102（跟随拖动量，
   SmoothDamp 平滑）与 103（跟随连点下标）。触发冷却按游戏语义——动作真正
   播出时全部机器冷却塌缩回 `min(limit_time, 0.2)` 秒，足额冷却只对不产出
-  播放的触发生效。拖拽按 `offset_x/y` 换算参数、`range` 钳制、`smooth` 平滑、
+  播放的触发生效。白名单/黑名单与机器按压锁对组名 `idle` 恒放行（游戏
+  checkEnablePlay 同款豁免，反应动作播完的显式待机回落不被拦截）；
+  拒播（引擎拒绝/被名单挡下）时 activeData 不入账，变体号/白名单只记到
+  真正播出的动作上。拖拽按 `offset_x/y` 换算参数、`range` 钳制、`smooth` 平滑、
   松手按 `parts_data` 档位吸附（type 2/3 限单向档位）、`revert` 控制回弹
   （-1 = 不回弹且持久化，localStorage 模拟游戏 PlayerPrefs）；`revert_idle_index`
   名单内的机器在 idle 变体切换时整体复位。触发后的待机回落按 idle 变体号取
@@ -105,10 +108,16 @@
   触发但查看器未实现该类型。颜色按真实路由分家：机器分区按参数机自身的
   可触发条件（`DragMachine.interactable()`；同名多机时任一台可响应即绿），
   无机器的分区才按 interaction.json 的起播门控
-- **待机**：`idle` 组循环播放；回落是确定性的——有拖拽参数机时恒取当前
-  idle 变体号对应的动作（`idle_index` 查表），否则取组内与组同名的支
-  （`idle.motion3.json`），避免随机换支与状态机遗留的开关参数冲突；
-  分支挂起（节点非中性）期间不回落，保持最后一帧姿态等待收尾手势
+- **待机**：`idle` 组循环播放；回落按游戏本体语义分两层——反应动作
+  `motionFinish` 后由 orchestrator **显式** force 重播组名 `idle`（对应游戏
+  FinishAction 处理器的 changeActionIdle，Unity Animator 由 "idle" 整数原子
+  选变体子状态，不存在引擎随机回落），变体号按 `idle_index` 查表解析；
+  引擎 `startRandomMotion` 的确定性选支补丁仅作兜底（有参数机时恒取当前
+  变体；无参数机取组内与组同名的支，且节点非中性期间不回落）。两层都不
+  随机换支，避免与状态机遗留的开关参数（摊开的菜单等）冲突。HUD 动作行
+  标注每次 idle 起播的来源：`explicit` = 显式回落、`engine` = 引擎兜底、
+  `engine-noorch` = 旧挂载 ctx 泄漏的 bug 信号、`退化` = 文件名未命中
+  回退基础 idle
 - **氛围层**：`effect` 组作为常驻层，按 motion3.json 曲线逐帧采样后直写参数，
   叠加在任意动作之上（`src/utils/ambient.js`）
 
@@ -201,6 +210,11 @@ node scripts/tests/run_all.mjs interaction
 ```
 
 测试入口会自动发现并串行运行全部 `test_*.mjs` 文件，最后按退出码汇总结果。
+
+`scripts/tests/probe/` 另有不进测试入口的诊断 CLI——交互管线场景重放
+（simulate.mjs）、参数姿态几何对比（pose_diff.mjs）、moc3 参数表/命中区
+核对等，排查"点击不触发/播错动作/扭曲错位"类运行时问题时手动跑，
+用法见 [docs/test.md](docs/test.md)。
 
 ## 致谢
 

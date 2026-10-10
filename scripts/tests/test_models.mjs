@@ -7,6 +7,7 @@ import fs from 'fs'
 import path from 'path'
 import { suite } from './helpers/suite.mjs'
 import { cubismCoreAvailable, loadMocModel } from './helpers/cubism.mjs'
+import { drawableBounds, readJson } from './probe/model_probe.mjs'
 
 const { check, finish } = suite('models 资产体检')
 
@@ -45,7 +46,6 @@ for (const dir of skins) {
     const uncovered = model.parameters.ids.filter((id) => !(id in defaults))
     check(`${name}: defaults 覆盖全部参数`, uncovered.length === 0)
     if (uncovered.length) console.log(`  未覆盖: ${uncovered.join(', ')}`)
-    // 干净默认姿态驱动一次形变，命中区包围盒按默认姿态测
     for (let i = 0; i < model.parameters.count; i++) {
       const d = defaults[model.parameters.ids[i]]
       if (d) model.parameters.values[i] = d.default
@@ -56,9 +56,8 @@ for (const dir of skins) {
   check(`${name}: interaction.json 在位`, fs.existsSync(path.join(dir, `${name}.interaction.json`)))
   check(`${name}: l2d.json 在位`, fs.existsSync(path.join(dir, `${name}.l2d.json`)))
   const l2d = fs.existsSync(path.join(dir, `${name}.l2d.json`))
-    ? JSON.parse(fs.readFileSync(path.join(dir, `${name}.l2d.json`), 'utf8'))
+    ? readJson(path.join(dir, `${name}.l2d.json`))
     : null
-  // 侧栏显示名取自 l2d.json 的 name（bake_l2d.py 烘焙的游戏内皮肤名）
   check(`${name}: l2d.json 带 name`, typeof l2d?.name === 'string' && l2d.name.length > 0)
 
   const ppu = CI.PixelsPerUnit
@@ -66,22 +65,10 @@ for (const dir of skins) {
   for (const ha of model3?.HitAreas ?? []) {
     const di = D.ids.indexOf(ha.Id)
     if (di < 0) continue
-    const v = D.vertexPositions[di]
-    let x0 = 1e9
-    let y0 = 1e9
-    let x1 = -1e9
-    let y1 = -1e9
-    for (let j = 0; j < v.length; j += 2) {
-      const x = v[j]
-      const y = v[j + 1]
-      if (x < x0) x0 = x
-      if (x > x1) x1 = x
-      if (y < y0) y0 = y
-      if (y > y1) y1 = y
-    }
+    const { minX, minY, maxX, maxY } = drawableBounds(D, di)
     console.log(
-      `  ${ha.Name.padEnd(15)} ${((x1 - x0) / ppu).toFixed(2).padStart(7)} ${((y1 - y0) / ppu).toFixed(2).padStart(8)}`,
-      `${((x0 + x1) / 2 / ppu).toFixed(2).padStart(7)} ${((y0 + y1) / 2 / ppu).toFixed(2).padStart(7)}`,
+      `  ${ha.Name.padEnd(15)} ${((maxX - minX) / ppu).toFixed(2).padStart(7)} ${((maxY - minY) / ppu).toFixed(2).padStart(8)}`,
+      `${((minX + maxX) / 2 / ppu).toFixed(2).padStart(7)} ${((minY + maxY) / 2 / ppu).toFixed(2).padStart(7)}`,
       ` ${String(D.opacities[di]).padStart(4)}`,
     )
   }

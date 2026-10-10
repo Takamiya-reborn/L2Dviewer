@@ -24,6 +24,13 @@ export async function mountModel(ctx, url) {
 }
 
 async function mountModelInner(ctx, url) {
+  // 挂载时序令牌：挂载内有多个 await（Live2DModel.from 要数秒），快速连续
+  // 切皮肤时两个挂载交错——先启动的后完成，会把 ctx.model/runtime/orch 覆盖
+  // 成旧实例、新旧两只模型同时滞留舞台（后加者在上面），交互/HUD/复位全绑
+  // 到看不见的那只（实测即"切过皮肤后状态卡死、重置交互无效"）。每次挂载
+  // 自增，任何 await 醒来发现令牌过期就丢弃自己的模型直接退出
+  const seq = (ctx._mountSeq = (ctx._mountSeq ?? 0) + 1)
+  const stale = () => seq !== ctx._mountSeq
   const app = ctx.app
   ctx.status.value = '加载模型…'
   ctx.hintsCtl.destroy()
@@ -42,6 +49,10 @@ async function mountModelInner(ctx, url) {
     autoInteract: false,
     idleMotionGroup: 'idle', // 本项目 idle 组为小写（Cubism 默认是 "Idle"）
   })
+  if (stale()) {
+    model.destroy()
+    return
+  }
   ctx.model = model
   model.internalModel.motionManager.on('motionStart', () => ctx.runtime?.resetParameters())
   // 常驻氛围层：effect 组（垂发/扶手布的微风摆动）在游戏内永远循环叠加，
@@ -50,6 +61,10 @@ async function mountModelInner(ctx, url) {
   // effect 缺失/加载失败只跳过本层，不应中断整个挂载
   try {
     const ambient = await loadAmbient(url, model.internalModel.settings)
+    if (stale()) {
+      model.destroy()
+      return
+    }
     if (ambient) {
       const core = model.internalModel.coreModel
       model.internalModel.on('afterMotionUpdate', () => ambient.apply(core, performance.now() / 1000))
@@ -60,11 +75,20 @@ async function mountModelInner(ctx, url) {
   app.stage.addChild(model)
   // 交互状态机：数据与模型同目录（<id>.interaction.json，本项目扩展产物），
   // 加载失败时运行时全旁路（参数全量复位、点击不做门控），退化为旧行为
-  ctx.runtime = new InteractionRuntime(model, await loadInteraction(url))
+  const interaction = await loadInteraction(url)
+  if (stale()) {
+    model.destroy()
+    return
+  }
+  ctx.runtime = new InteractionRuntime(model, interaction)
   // 拖拽参数机：数据与模型同目录（<id>.l2d.json，bake_l2d.py 烘焙产物）；
   // 播放回调解析 clip 名 -> 动作组（白名单里存的是 clip 名，如 touch_idle1、
   // idle1），机器分区命中后由编排器接管路由
   const l2dConfig = await loadL2dConfig(url)
+  if (stale()) {
+    model.destroy()
+    return
+  }
   if (l2dConfig) {
     ctx.l2dOffset = l2dConfig.live2d_offset ?? null
     const orch = new DragOrchestrator(model, l2dConfig, ctx.actions.playLuaAction)

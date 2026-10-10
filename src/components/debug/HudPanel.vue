@@ -24,6 +24,14 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'reset'])
     </button>
   </div>
   <div v-if="showDebug && hud" class="debug-panel">
+    <div v-if="hud.motion" class="debug-row">
+      <span class="debug-key">动作</span>
+      <span class="debug-pair">{{ hud.motion.name ?? '（无挂起）' }}</span>
+      <span v-if="hud.motion.idle" class="debug-pair dim">idle循环</span>
+      <span v-if="hud.motion.fallback" class="debug-pair dim">
+        {{ hud.motion.fallback.source }}:{{ hud.motion.fallback.clip }}[{{ hud.motion.fallback.index }}]<template v-if="hud.motion.fallback.degraded">退化</template>
+      </span>
+    </div>
     <template v-if="hud.zones.length || hud.carried.length">
       <div class="debug-row">
         <span class="debug-key">状态</span>
@@ -36,6 +44,7 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'reset'])
         <span class="debug-key">机器</span>
         <span class="debug-pair">idle={{ hud.machine.idle }}</span>
         <span class="debug-pair">白名单={{ hud.machine.whitelist }}</span>
+        <span v-if="hud.machine.able" class="debug-pair">按压锁</span>
         <span v-if="hud.machine.active" class="debug-pair">按住:{{ hud.machine.active }}</span>
       </div>
       <div v-if="hud.machine.machines.length" class="debug-row">

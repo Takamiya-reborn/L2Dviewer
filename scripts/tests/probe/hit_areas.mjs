@@ -20,6 +20,7 @@
 import fs from 'fs'
 import path from 'path'
 import { loadMocModel } from '../helpers/cubism.mjs'
+import { drawableBounds, normalizeZone, readJson, resolveModelDir } from './model_probe.mjs'
 
 const target = process.argv[2]
 if (!target) {
@@ -27,13 +28,8 @@ if (!target) {
   process.exit(1)
 }
 
-const dir = fs.existsSync(target) && fs.statSync(target).isDirectory()
-  ? target
-  : path.dirname(target)
+const dir = resolveModelDir(target)
 const { model, model3, name } = await loadMocModel(dir)
-
-/** 查看器侧命中分区名归一化（与 DragOrchestrator.machinesForZone 同规则） */
-const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '')
 
 const ci = model.canvasinfo
 console.log(`${path.join(dir, name + '.moc3')} 画布 ${ci.CanvasWidth}x${ci.CanvasHeight}`)
@@ -52,30 +48,17 @@ for (const a of areas) {
     console.log(`✗ ${a.name} (${a.id}): drawable 不存在（网格缺失或 Id 拼写不符）`)
     continue
   }
-  const verts = model.drawables.vertexPositions[a.index]
-  const count = model.drawables.vertexCounts[a.index]
-  let x0 = Infinity
-  let y0 = Infinity
-  let x1 = -Infinity
-  let y1 = -Infinity
-  for (let j = 0; j < count * 2; j += 2) {
-    const vx = verts[j]
-    const vy = verts[j + 1]
-    if (vx < x0) x0 = vx
-    if (vx > x1) x1 = vx
-    if (vy < y0) y0 = vy
-    if (vy > y1) y1 = vy
-  }
-  boxes.set(norm(a.name), a.name)
+  const { minX, minY, maxX, maxY } = drawableBounds(model.drawables, a.index)
+  boxes.set(normalizeZone(a.name), a.name)
   console.log(
     `${a.name.padEnd(20)} drawable=${String(a.index).padStart(3)}  ` +
-    `判定框(画布px) ${Math.round(x1 - x0)}×${Math.round(y1 - y0)}  ` +
-    `范围 x[${Math.round(x0)},${Math.round(x1)}] y[${Math.round(y0)},${Math.round(y1)}]`,
+    `判定框(画布px) ${Math.round(maxX - minX)}×${Math.round(maxY - minY)}  ` +
+    `范围 x[${Math.round(minX)},${Math.round(maxX)}] y[${Math.round(minY)},${Math.round(maxY)}]`,
   )
 }
 
 const l2dFile = path.join(dir, `${name}.l2d.json`)
-const l2d = fs.existsSync(l2dFile) ? JSON.parse(fs.readFileSync(l2dFile, 'utf8')) : null
+const l2d = fs.existsSync(l2dFile) ? readJson(l2dFile) : null
 if (!l2d) {
   console.log('\n（目录下无 l2d.json，跳过机器分区核对）')
   process.exit(0)
@@ -84,14 +67,14 @@ if (!l2d) {
 console.log('\n== 机器分区（l2d.json draw_able_name）vs HitAreas ==')
 let flagged = 0
 for (const e of l2d.entries) {
-  const zone = norm(e.draw_able_name)
+  const zone = normalizeZone(e.draw_able_name)
   if (!boxes.has(zone)) {
     flagged++
     console.log(`✗ ${e.draw_able_name} (${e.parameter}): HitAreas 无同名分区，机器路由不会命中`)
   }
 }
 for (const a of areas) {
-  const hasMachine = l2d.entries.some((e) => norm(e.draw_able_name) === norm(a.name))
+  const hasMachine = l2d.entries.some((e) => normalizeZone(e.draw_able_name) === normalizeZone(a.name))
   if (!hasMachine) {
     // touch_head/body 等 C# 路径分区本就无机器，走 interaction.json 门控，非异常
     const isDragFamily = /^touch_(drag|idle|special)/i.test(a.name)

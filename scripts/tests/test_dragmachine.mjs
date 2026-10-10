@@ -175,7 +175,15 @@ check('type3 松手收尾播末项 h2 并回卷', played2.at(-1) === 'h2' && m3.
 check('充能机松手吸附 type2 档位(0.333 → 0.21)', Math.abs(m8.parameterTargetValue - 0.21) < 1e-9)
 
 // --- 8) type 9 点参：他参贴近才触发 ---
+// 旧判据漏了档位：充能残留 c1≈0.21 时两档都不贴近，分区却画绿（绿但白点，
+// 会把排查引向"点击没路由"的歧路）。修正后任一台档位贴近才绿
+params2.c1 = 0.21
+check('type9 两档都不贴近 → 分区红', orch2.zoneInteractable('touch_drag3') === false)
+params2.c1 = 0
 check('type9 分区可交互（任一台可响应即绿）', orch2.zoneInteractable('touch_drag3') === true)
+params2.c1 = 0.5
+check('type9 档位不贴近的机器不画绿(单机)', m9a.interactable() === false)
+check('type9 档位贴近的另一台仍绿(单机)', m9b.interactable() === true)
 params2.c1 = 0
 m9a.applyClickTrigger() // num=0 贴合 → 触发
 check('type9 num=0 贴合触发', played2.at(-1) === 'stage0')

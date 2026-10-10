@@ -62,8 +62,13 @@
 
 - **AnimationEvent 钩子**：每支动作内嵌事件——`OnAnimEvent(0)` 在动作开头触发
   （语音/配音钩子）；`OnFinishAnim(N)` 在动作结尾 `SetInteger(ActionId, N)`：
-  系统动作 N=自身编号（自循环），触摸反应 N=0（无状态匹配，回落默认 idle）
-  ——即"播完进入等待输入"语义
+  系统动作 N=自身编号（自循环），触摸反应 N=0 → Lua 侧 FinishAction 处理器
+  （live2d.lua）尾部 `changeActionIdle()` **显式** force 重播组名 `"idle"`，
+  由 Animator 的 idle 变体整数原子选子状态——游戏没有"引擎随机回落"这回事，
+  反应动作播完即进入当前变体的待机；Lua 播放门控 checkEnablePlay 对组名
+  `"idle"` 恒放行（显式回落不受白名单/黑名单与机器按压锁阻拦）。移植若依赖
+  引擎的空闲回落，选支路径退化时会播错变体（fulici_2 实测"机器行 idle=4
+  却播基础待机"即此）
 - **跨动作参数状态**：游戏不在动作间复位参数，图层/道具开关型参数（取值贴
   0/±1，如菜单开合、菜单可点区）的值跨动作持续。"菜单摊开"就是 touch_idle
   系列动作播完后开关值残留在运行时里
@@ -129,7 +134,7 @@ idle 1/2/4/5/6，touch_idle3/5/7/9 → idle 0 回基础待机）。
 - 触发成功后应用 `action_trigger_active`：`enable`/`ignore` 是之后的动作
   白名单/黑名单（**对一切动作播放生效**，含系统面板触发；空数组 = 清空），
   `idle`（数字或数组）切换待机变体——即 Animator SetInteger("idle")，
-  触发即设、播完落 idle 态时生效；重复 idle 且未开 `repeat_flag` 时整个
+  触发即设、播完由 changeActionIdle 显式重播时生效；重复 idle 且未开 `repeat_flag` 时整个
   触发跳过。机器按下期间（`EVENT_ACTION_ABLE`，ableFlag=true 时把播放白名单
   换成 `{"none action apply"}`）一切动作播放被临时屏蔽——例外是 type 3 长按
   触发瞬间先 `setAbleWithFlag(false)` 再 apply 再置回：按住期间自发触发的动作

@@ -141,8 +141,14 @@ export class DragOrchestrator {
     this.machineAble = able
   }
 
-  /** 白名单/黑名单检查，对一切动作播放生效（游戏 checkEnablePlay） */
+  /** 白名单/黑名单检查，对一切动作播放生效（游戏 checkEnablePlay）。
+      游戏里 "idle" 在白名单检查之前恒放行（Lua slot13 首条：触发改 idle
+      变体的收尾分支后白名单是 48 项 touch_idle/clip 名，重播 idle 若也走
+      名单会被整个拦死——实测即复位/回落后不再播任何动作）；按压锁
+      （ableFlag）在游戏里是用 setEnableActions(['none action apply']) 换
+      白名单实现的，idle 同样越过它，故豁免放最前 */
   checkEnablePlay(actionName) {
+    if (actionName === 'idle') return true
     if (this.machineAble) return false
     if (this.enablePlayActions.length && !this.enablePlayActions.includes(actionName)) return false
     if (this.ignorePlayActions.includes(actionName)) return false
@@ -156,12 +162,15 @@ export class DragOrchestrator {
   }
 
   /**
-   * 机器触发 -> 播放动作。action 非空且真的播出去（存在 + 白名单放行）才应用
-   * activeData；action 为空则直接应用（游戏"空触发"分支）。
+   * 机器触发 -> 播放动作。action 非空且真的播出去（存在 + 白名单放行 + 引擎
+   * 接受）才应用 activeData；action 为空则直接应用（游戏"空触发"分支）。
    */
-  onActionApply(machine, action, activeData) {
+  async onActionApply(machine, action, activeData) {
     if (action) {
-      const played = this.playAction(action)
+      // playAction 返回引擎的真实播放结果（async）：拒播时 activeData 不入账，
+      // 否则 idle 变体号/白名单会记到一次没播出去的动作上（实测即"机器行
+      // idle=4 而实际还在播基础 idle"的卡死态）
+      const played = await this.playAction(action)
       // debug 读数：触发链关键步，debugHook 接线见 l2d/mount.js
       this.debug?.(
         `${machine.parameterName} 触发 ${action}` +
@@ -227,6 +236,9 @@ export class DragOrchestrator {
    *             状态——否则 isPlaying 永久滞留 true，点击触发恒被拦）
    */
   noteMotionStart(clipName, idle = false) {
+    // 最近一次起播是否 idle 组：noteMotionFinish 判定"反应动作播完"用
+    // （库的 motionFinish 事件不带 group 参数，只能在这里记）
+    this._lastStartIdle = idle
     if (!idle) {
       this.isPlaying = true
       this.playActionName = clipName
@@ -245,8 +257,19 @@ export class DragOrchestrator {
   }
 
   noteMotionFinish() {
+    const wasPlaying = this.isPlaying
+    const name = this.playActionName
+    const idle = this._lastStartIdle
     this.isPlaying = false
     this.playActionName = ''
+    // 游戏 FinishAction 处理器（live2d.lua:666）尾部的 changeActionIdle：
+    // 反应动作播完**显式** force 重播 "idle"——游戏没有"引擎随机回落"这回
+    // 事，Unity Animator 由 "idle" 整数参数原子地选变体子状态；这里等价于
+    // playLuaAction('idle')（组名路由会按 idleClipFor(idleIndex) 解析变体
+    // 下标）。引擎的 startRandomMotion 回落补丁只作兜底——它的选支路径在
+    // 实机上曾退化到基础 idle（idle.motion3.json 恰在组内下标 4，机器行
+    // idle=4 却播基础待机即此），改走游戏本体的显式路径后不再依赖它
+    if (wasPlaying && name && !idle) this.playAction?.('idle')
   }
 
   // ---- 每帧驱动与参数图层 ----
@@ -341,9 +364,13 @@ export class DragOrchestrator {
     this.saveValue('__idle', 0)
     this.saveValue('__action', 0)
     for (const m of this.machines) m.reset()
+    // 按压锁一并清掉：machineAble 置真后若没走到任何清假路径（如按压中
+    // 复位），checkEnablePlay 恒假会连"重置交互"自己的重播一起拦死
+    this.setMachineAble(false)
     this.idleIndex = 0
     this.isPlaying = false
     this.playActionName = ''
+    this._lastStartIdle = false
     this.enablePlayActions = []
     this.ignorePlayActions = []
   }
@@ -352,10 +379,9 @@ export class DragOrchestrator {
       relation 联动参数实时值。返回结构化数据（键值对组），展示层负责排版 */
   hudInfo() {
     const active = this.machines.find((m) => m._active)
-    const machines = this.machines.map((m) => [
-      m.parameterName,
-      Number(m.parameterValue.toFixed(2)),
-    ])
+    const machines = this.machines
+      .filter((m) => m.parameterName) // mode 2 联动机本机参数为空，走"联动"行
+      .map((m) => [m.parameterName, Number(m.parameterValue.toFixed(2))])
     const relations = []
     for (const m of this.machines) {
       for (const r of m.relations) {
@@ -367,6 +393,7 @@ export class DragOrchestrator {
     return {
       idle: this.idleIndex,
       whitelist: this.enablePlayActions.length,
+      able: this.machineAble,
       active: active ? active.drawAbleName : null,
       machines,
       relations,

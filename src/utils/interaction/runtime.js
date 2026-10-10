@@ -23,7 +23,13 @@ export class InteractionRuntime {
     this.interaction = interaction
     const clips = interaction?.clips ?? {}
     // 状态机参数：有动作以非默认值继承（起播边界非 0）——复位时必须跳过，
-    // 否则"菜单摊开"等跨动作状态会在下一支动作开始瞬间被抹掉
+    // 否则"菜单摊开"等跨动作状态会在下一支动作开始瞬间被抹掉。
+    // 聚合按参数计：flatMap 横跨全部动作，某支动作里 [0,1]（起 0 收 1）的
+    // 条目滤掉没关系，另一支动作 [1,0]（起播=1）的条目就是游戏未复位的
+    // 直接证据——wuzang_3 的 JIRU/GL1/Param57/Param164 在 touch_drag3/4/6/8
+    // 里起 0 收 1、在 touch_drag9~14 里起播=1（收尾动作再带回 0），特效件
+    // 正是被这批参数点亮的跨动作状态。纯 end-only（所有条目起播都是 0，
+    // 如 sdrtx）才是复位管理的瞬态参数
     this.statePids = new Set(
       Object.values(clips)
         .flatMap((c) => Object.entries(c.state ?? {}))
