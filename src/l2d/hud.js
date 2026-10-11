@@ -24,6 +24,14 @@ export function createTickerCallback(ctx) {
       motion: rt
         ? { name: rt.pending, idle: rt.pendingIdle, fallback: ctx.idleFallback ?? null }
         : null,
+      // 调色板：面板开合（BANZI）+ 色轴实时值 + 循环/复位回调（HudPanel 点击用）
+      palette: ctx.palette
+        ? {
+            ...ctx.palette.read(),
+            cycle: (id) => ctx.palette.cycle(id),
+            reset: () => ctx.palette.reset(),
+          }
+        : null,
     }
   }
 }

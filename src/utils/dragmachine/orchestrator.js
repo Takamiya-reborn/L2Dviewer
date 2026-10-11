@@ -17,7 +17,7 @@ export async function loadL2dConfig(modelUrl) {
  * == 编排器级状态契约（属主 × 写入点 × 复位责任） ==
  * | 变量                    | 写入点                                         | 复位时机            |
  * | machineAble（按压锁）   | pressLock 唯一入口（写入方全集：machine.onDown/applyClickTrigger/onUp/onCancel/step 窗口作废、triggers.js type3×4+type8、resetAll）；setMachineAble 仅供测试拦截与 pressLock 落底 | pressLock(…,false) 各收尾路径 / resetAll |
- * | isPlaying/playActionName| noteMotionStart 置真（仅非 idle）/noteMotionFinish 清 | resetAll；滞留即锁死一切点击（HUD playing 读数） |
+ * | isPlaying/playActionName| noteMotionStart 清后按需置真（被顶掉动作不发 finish，起播即清算旧反应）/noteMotionFinish 清 | resetAll；滞留即锁死一切点击（HUD playing 读数） |
  * | enablePlayActions/ignorePlayActions | applyActiveData 唯一写（enable 在场即遮蔽 idle_enable，原文 #x>=0 恒真语义） | resetAll |
  * | idleIndex               | changeIdleIndex 唯一写（resetAll 直接置 0）     | resetAll            |
  * | _lastStartIdle          | noteMotionStart 记，noteMotionFinish 用         | resetAll            |
@@ -254,19 +254,63 @@ export class DragOrchestrator {
   }
 
   /**
+   * action='idle' 的变体选支（游戏 applyActiveData idle 段同款规则，
+   * live2d.lua CT:1166-1182）：数字直取（负数视为未配置）、数组按 repeat_flag
+   * 剔除当前变体后随机。返回 number | null
+   */
+  pickIdleVariant(activeData) {
+    const idle = activeData.idle
+    if (typeof idle === 'number') return idle >= 0 ? idle : null
+    if (Array.isArray(idle) && idle.length) {
+      const pool = activeData.repeat_flag ? idle : idle.filter((n) => n !== this.idleIndex)
+      return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null
+    }
+    return null
+  }
+
+  /**
    * 机器触发 -> 播放动作。action 非空且真的播出去（存在 + 白名单放行 + 引擎
    * 接受）才应用 activeData；action 为空则直接应用（游戏"空触发"分支）。
    */
   async onActionApply(machine, action, activeData) {
     if (action) {
+      // action='idle' 先切变体后播：游戏里 play("idle") 的 SetAction 与
+      // applyActiveData 的 SetInteger("idle",n) 同帧落账（live2d.lua CT:286-291），
+      // Animator 下一帧才评估迁移——实际播出的就是 activeData 指向的新变体
+      // 子状态，且游戏播放器（整数迁移）不存在"重播正在循环的同支 idle"这回事，
+      // 恒成功。移植端 playLuaAction 重播在循环的同支会被引擎 reserve 拒绝
+      // （播放失败 → activeData 不入账），wuzang_3 的背景板摆位机
+      // TouchDrag4/TouchDrag18（action 恰为 "idle" 本身）因此永远切不动摆位。
+      // 先落账变体再播，playLuaAction 按 idleClipFor(新变体) 解析出新 clip。
+      // 游戏对 idle_focus=1 的空动作机同款先切后播先例（CT:280-284）。选支只
+      // 做一次并带给 applyActiveData——数组 idle 的两次随机不得各选各的；
+      // 新旧变体解析出同一 clip 时预切无意义（引擎照样拒绝同支），维持原序
+      let picked
+      if (
+        action === 'idle' &&
+        activeData?.idle != null &&
+        this.model.internalModel.settings?.motions?.idle
+      ) {
+        const variant = this.pickIdleVariant(activeData)
+        if (
+          variant != null &&
+          variant !== this.idleIndex &&
+          this.idleClipFor(variant) !== this.idleClipFor(this.idleIndex)
+        ) {
+          picked = variant
+          this.changeIdleIndex(variant)
+        }
+      }
       // playAction 返回引擎的真实播放结果（async）：拒播时 activeData 不入账，
       // 否则 idle 变体号/白名单会记到一次没播出去的动作上（实测即"机器行
-      // idle=4 而实际还在播基础 idle"的卡死态）
+      // idle=4 而实际还在播基础 idle"的卡死态）。先切路径的变体号是唯一例外
+      // ——游戏侧该路径无失败形态（见上），变体先行落账与播出强绑定
       const played = await this.playAction(action)
       // debug 读数：触发链关键步，debugHook 接线见 l2d/mount.js
       this.debug?.(
         `${machine.parameterName} 触发 ${action}` +
           ` 播放${played ? '成功' : '失败'}` +
+          (picked != null ? `(idle变体→${picked}已先切)` : '') +
           (Array.isArray(activeData?.enable)
             ? `,名单→${activeData.enable.length}项`
             : ',名单不变'),
@@ -275,7 +319,8 @@ export class DragOrchestrator {
         // 游戏在 checkEnablePlay 通过后、applyActiveData 之前发 PLAY 通知
         // （live2d.lua:288）：type 1 监听机在此改 target/换挡
         this.notice(1, { action })
-        this.applyActiveData(machine.id, activeData, true)
+        if (picked != null) this.applyActiveData(machine.id, activeData, true, null, picked)
+        else this.applyActiveData(machine.id, activeData, true)
       }
     } else {
       this.applyActiveData(machine.id, activeData, true)
@@ -287,8 +332,12 @@ export class DragOrchestrator {
    * @param payloadIdle 事件负载里的 idle（联动层 EVENT_CHANGE_IDLE_INDEX 的
    *   负载值）：activeData.idle 缺省时回落到它（游戏 slot7 = activeData.idle
    *   or payload.idle）；idle_enable/idle_ignore 按这个变体号取对应名单。
+   * @param pickedIdle action='idle' 先切后播路径已选定的变体（onActionApply
+   *   挑好的那只）：数组 idle 不再重挑（两次随机会各选各的）、数字 idle 不再
+   *   重复 changeIdleIndex（变体已落账，重复发 CHANGE_IDLE 通知是噪音）。
+   *   仅在先切真正发生过时才传
    */
-  applyActiveData(machineId, activeData, save, payloadIdle = null) {
+  applyActiveData(machineId, activeData, save, payloadIdle = null, pickedIdle) {
     if (!activeData) return
     // Lua 空表经 bake 序列化成 {} 而非 []：enable/ignore 是序列名单，空表 =
     // 清空白/黑名单，游戏 setEnableActions({}) 照常落账——只认 isArray 会把
@@ -325,9 +374,17 @@ export class DragOrchestrator {
       }
     }
     if (Array.isArray(idle) && idle.length) {
-      // 数组 idle：随机挑一个；不开 repeat_flag 时剔除当前值（游戏 applyActiveData）
-      const pool = activeData.repeat_flag ? idle : idle.filter((n) => n !== this.idleIndex)
-      idle = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null
+      // 数组 idle：随机挑一个；不开 repeat_flag 时剔除当前值（游戏 applyActiveData）。
+      // 先切路径已选定 pickedIdle 时不重挑
+      if (pickedIdle !== undefined) idle = pickedIdle
+      else {
+        const pool = activeData.repeat_flag ? idle : idle.filter((n) => n !== this.idleIndex)
+        idle = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null
+      }
+    } else if (pickedIdle !== undefined) {
+      // 数字 idle 已在播放前落账（先切后播），重复 changeIdleIndex 只会重发
+      // CHANGE_IDLE 通知
+      idle = null
     }
     if (idle != null && typeof idle === 'number') {
       // 无 idleIndex 相等守卫：原文 CT:1159 的守卫比较的是恒 nil 的 indexIndex
@@ -369,6 +426,13 @@ export class DragOrchestrator {
    *             状态——否则 isPlaying 永久滞留 true，点击触发恒被拦）
    */
   noteMotionStart(clipName, idle = false) {
+    // 被顶掉的旧反应动作不会再发 motionFinish（库只在动作队列排空且 playing
+    // 仍真时发一次 finish，FORCE 起播杀掉旧队列条目是无声的）：新动作起播即
+    // 宣告旧反应终局，先清滞留的播放中——否则长按姿势播放中松手、收尾切
+    // idle 的场合（wuzang_3 TouchDrag2 充能），isPlaying 永久滞留真值，全机
+    // ignore_action 拒按 + 触发处理器 l2dIsPlaying 早退，交互整体锁死
+    this.isPlaying = false
+    this.playActionName = ''
     // 最近一次起播是否 idle 组：noteMotionFinish 判定"反应动作播完"用
     // （库的 motionFinish 事件不带 group 参数，只能在这里记）
     this._lastStartIdle = idle

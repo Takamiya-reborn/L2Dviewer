@@ -64,15 +64,8 @@ export function meshHitTest(model, x, y) {
   return hits.map((h) => h.name)
 }
 
-/**
- * 计算 drawable 网格的边界环（只被一个三角形使用的边连成的闭合回路），
- * 用于把真实网格形状画出来。三角形索引布局不随帧变化，拓扑结果按
- * drawable 下标缓存。非流形网格（边界顶点挂 >2 条边界边，Cubism 网格里
- * 偶见）无法连成干净回路，返回 null 由调用方退化为逐边画线段。
- *
- * @returns {number[][] | null} 环 = 顶点下标序列（首尾相接）
- */
-export function boundaryLoops(indices) {
+/** 统计每条无向边被多少个三角形使用，key = "小顶点_大顶点" */
+function edgeUseCounts(indices) {
   const edgeCount = new Map()
   const key = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`)
   for (let t = 0; t < indices.length; t += 3) {
@@ -82,6 +75,33 @@ export function boundaryLoops(indices) {
       edgeCount.set(k, (edgeCount.get(k) ?? 0) + 1)
     }
   }
+  return edgeCount
+}
+
+/**
+ * 网格的边界边（只被一个三角形使用的边）。非流形网格连不成边界环时，
+ * 调用方可退化为逐条描边界边——形状与环描边一致，只是没串成回路
+ *
+ * @returns {number[][]} [顶点a, 顶点b] 下标对
+ */
+export function boundaryEdges(indices) {
+  const edges = []
+  for (const [k, count] of edgeUseCounts(indices)) {
+    if (count === 1) edges.push(k.split('_').map(Number))
+  }
+  return edges
+}
+
+/**
+ * 计算 drawable 网格的边界环（只被一个三角形使用的边连成的闭合回路），
+ * 用于把真实网格形状画出来。三角形索引布局不随帧变化，拓扑结果按
+ * drawable 下标缓存。非流形网格（边界顶点挂 >2 条边界边，Cubism 网格里
+ * 偶见）无法连成干净回路，返回 null 由调用方退化为 boundaryEdges 描段。
+ *
+ * @returns {number[][] | null} 环 = 顶点下标序列（首尾相接）
+ */
+export function boundaryLoops(indices) {
+  const edgeCount = edgeUseCounts(indices)
   const adjacency = new Map()
   for (const k of edgeCount.keys()) {
     if (edgeCount.get(k) !== 1) continue

@@ -28,5 +28,5 @@
  * （pixi 调试覆盖层）。
  */
 export { loadInteraction, InteractionRuntime } from './runtime.js'
-export { meshHitTest, boundaryLoops } from './hitTest.js'
+export { meshHitTest, boundaryLoops, boundaryEdges } from './hitTest.js'
 export { createInteractionHints } from './hints.js'

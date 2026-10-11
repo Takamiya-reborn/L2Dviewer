@@ -362,4 +362,73 @@ check('resetAll 归位下标/冷却/触发标记/累计',
   mL2.actionListIndex === 1 && mL2.nextTriggerTime === 0 && mL2.isTriggerAtion === false && mL2.triggerActionTime === 0)
 near('resetAll 参数回 startValue', mL2.parameterTargetValue, mL2.startValue)
 
+// --- 15) action='idle' 先切变体后播（wuzang_3 背景板摆位机 TouchDrag4/18）---
+// 游戏里 play("idle") 的 SetAction 与 applyActiveData 的 SetInteger("idle",8)
+// 同帧落账，Animator 下帧统一切子状态 → 播出即新变体 clip，且游戏播放器无
+// "重播同支循环 idle 被拒"这回事。移植端若按"先播后切"原序，playLuaAction
+// 会因同支 clip 已在循环被引擎 reserve 拒绝 → activeData 不入账 → 摆位永远
+// 切不动。onActionApply 现先 changeIdleIndex 再播，播放的是新变体 clip
+const playedBg = []
+// 播放调用时刻的变体号：先切后播的关键断言——playLuaAction 按"播放时的
+// idleIndex"解析变体 clip（playAction mock 收到的动作名恒为 'idle'，变体
+// 解析在其内部），变体已切 = 引擎拿到的是新变体 clip 而非在循环的同支
+const variantAtPlay = []
+const orchBg = new DragOrchestrator(
+  makeModel(makeCoreModel({ bg1: { default: 0 } }), { motions: { idle: [{ File: 'motions/idle.motion3.json' }, { File: 'motions/idle8.motion3.json' }] } }),
+  {
+    skin_id: 'testbg',
+    idle_index: { 0: 'idle', 8: 'idle8' },
+    entries: [
+      // 摆位机：action 恰为 "idle" 本身，active 带 idle=8（TouchDrag4 实配同款）
+      { id: 31, draw_able_name: 'TouchDrag4', parameter: 'bg1', action_trigger: { type: 2, action: 'idle', target: 1 }, action_trigger_active: { idle: 8, idle_focus: 1, enable: {}, ignore: [] }, limit_time: 0, revert: -1, range: [0, 1] },
+      // 孪生回程机：idle=0（TouchDrag18），idle=8 时点它切回
+      { id: 32, draw_able_name: 'TouchDrag18', parameter: 'bg1', action_trigger: { type: 2, action: 'idle', target: 0 }, action_trigger_active: { idle: 0, idle_focus: 1, enable: {}, ignore: [] }, limit_time: 0, revert: -1, range: [0, 1] },
+    ],
+  },
+  (clip) => {
+    playedBg.push(clip)
+    variantAtPlay.push(orchBg.idleIndex)
+    return true
+  },
+)
+const { 31: mBg4, 32: mBg18 } = machinesById(orchBg)
+mBg4.applyTrigger()
+check('摆位机先切后播：播放调用时变体已切到 8（playLuaAction 将解析 idle8）', variantAtPlay.at(-1) === 8, `实际 ${variantAtPlay.at(-1)}`)
+check('变体已落账 idleIndex=8', orchBg.idleIndex === 8)
+mBg18.applyTrigger()
+check('孪生回程机切回：播放调用时变体已回到 0', variantAtPlay.at(-1) === 0, `实际 ${variantAtPlay.at(-1)}`)
+check('变体回到 0', orchBg.idleIndex === 0)
+// 无 idle 组的模型（settings.motions 缺 idle）不做先切，维持原"先播后切"序
+const variantNoGroup = []
+const orchNoGroup = new DragOrchestrator(
+  makeModel(makeCoreModel({ bg2: { default: 0 } }), { motions: {} }),
+  {
+    skin_id: 'testnogroup',
+    idle_index: { 0: 'idle', 8: 'idle8' },
+    entries: [
+      { id: 33, draw_able_name: 'TouchDrag4', parameter: 'bg2', action_trigger: { type: 2, action: 'idle', target: 1 }, action_trigger_active: { idle: 8 }, limit_time: 0, revert: -1, range: [0, 1] },
+    ],
+  },
+  (clip) => {
+    variantNoGroup.push(orchNoGroup.idleIndex)
+    return true
+  },
+)
+// 无 idle 组时维持先播后切：applyActiveData 在 play 的 await 之后才入账，
+// 断言要等微任务排空（先切路径的落账是同步的，无需等）
+await machinesById(orchNoGroup)[33].applyTrigger()
+check('无 idle 组时维持先播后切（播放时变体仍 0，播后入账 8）', variantNoGroup.at(-1) === 0 && orchNoGroup.idleIndex === 8)
+
+// --- 16) 起播即清滞留播放中（被顶掉的反应动作不发 motionFinish 的回归）---
+// wuzang_3 TouchDrag2 长按充能：touch_drag2 播放中松手，收尾切 idle（FORCE）
+// 顶掉在播姿势——pixi 只在动作队列排空且 playing 仍真时发一次 motionFinish
+// （index.es.js update()），被顶掉的姿势不发；noteMotionStart 若不清旧状态，
+// isPlaying 滞留真值 → 全机 ignore_action 拒按 + 触发处理器 l2dIsPlaying 早退，
+// 松手后交互整体锁死（HUD 恒显"播放中"）
+orch.noteMotionStart('act1', false)
+check('反应动作起播置播放中', orch.isPlaying === true && orch.playActionName === 'act1')
+orch.noteMotionStart('idle1', true) // 收尾切 idle：FORCE 顶掉 act1
+check('idle 起播即清滞留播放中（松手后立即可再交互）',
+  orch.isPlaying === false && orch.playActionName === '')
+
 finish()

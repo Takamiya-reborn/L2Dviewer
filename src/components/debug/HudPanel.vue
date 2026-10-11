@@ -72,6 +72,26 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'rese
         <span v-for="([k, v], i) in hud.machine.relations" :key="'r' + i" class="debug-pair">{{ k }}={{ v }}</span>
       </div>
     </template>
+    <template v-if="hud.palette">
+      <div class="debug-row">
+        <span class="debug-key">调色板</span>
+        <span v-if="hud.palette.open" class="debug-pair dim">面板开</span>
+        <span
+          v-for="([id, v], i) in hud.palette.axes"
+          :key="'p' + i"
+          class="debug-pair clickable"
+          title="点击循环 0 → 1 → -1"
+          @click="hud.palette.cycle(id)"
+        >
+          {{ id }}={{ v }}
+        </span>
+        <span
+          class="debug-pair dim clickable"
+          title="全部色轴归零（默认方案）"
+          @click="hud.palette.reset()"
+        >复位</span>
+      </div>
+    </template>
     <div class="debug-row">
       <span class="debug-key">标定</span>
       <span class="debug-pair">×{{ hud.scale.toFixed(2) }}</span>
@@ -151,5 +171,14 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'rese
 /* 异常态读数（播放中滞留等）：暖色提示一眼可辨 */
 .debug-pair.warn {
   color: #e8b06f;
+}
+
+/* 可点击读数（调色板色轴循环/复位）：与提示开关同族的悬停反馈 */
+.debug-pair.clickable {
+  cursor: pointer;
+}
+
+.debug-pair.clickable:hover {
+  color: #e8e8ee;
 }
 </style>

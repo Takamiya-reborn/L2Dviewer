@@ -12,6 +12,13 @@ export async function loadInteraction(modelUrl) {
     .catch(() => null)
 }
 
+/**
+ * 平滑复位窗口缺省值（秒）：mount.js 在 motionStart 时按起播 clip 查
+ * fades.json 的转场时长传入（与新动作的渐入窗口严格同源同值）；这里只是
+ * fades 表缺失/未命中时的兜底，与 motionPatches.js 的 config 渐变兜底同值
+ */
+const RESET_FADE = 0.3
+
 export class InteractionRuntime {
   /**
    * @param model pixi-live2d-display 的 Live2DModel
@@ -229,15 +236,75 @@ export class InteractionRuntime {
   }
 
   /**
-   * 按节点复位参数：非状态机参数回到 moc3 默认值，状态机参数对齐到跟踪
-   * 节点的值。游戏内每个 AnimationClip 都假定从默认姿态起播；而 idle 组只
-   * 覆盖约 1/5 的参数，若不复位，上一支动作遗留的图层/道具开关（如
-   * ParamCrusLLayer2、heiping）会持续污染后续动作，产生穿模、碎片残影等
-   * 渲染错误。状态机参数不能简单复位也不能简单保留——被中途打断的动作会
-   * 把实时值留在半途（如菜单摊到一半），节点才是协议意义上的当前状态，
-   * 对齐到节点同时消除打断残留。在 motionStart 时调用可确保动作首次求值
-   * 前参数是干净的（update 的 loadParameters 只恢复到"上一帧动作求值后"的
-   * 值，不会冲掉这里写入的值；新动作曲线随后逐帧接管它涉及到的参数）。
+   * 平滑复位登记（motionStart 触发）：目的与 resetParameters 相同——非状态
+   * 参数回 moc3 默认、状态机参数对齐到跟踪节点，防止上一支动作遗留的图层/
+   * 道具开关（如 ParamCrusLLayer2、heiping）污染后续动作。差别只在落笔方式：
+   * 旧版硬切时代与动作起播同帧瞬跳，只有一记跳变；交叉渐变恢复后瞬跳会
+   * 毁掉渐变的混合起点（新动作变成"从默认姿态渐入"，非默认姿态间的过渡
+   * 多出一记先弹回默认的硬切，实测即"更多地方硬邦邦"）。改为登记一个与
+   * 动作渐变同窗口的缓动复位，由 applySmoothReset 每帧落笔——新动作曲线
+   * 驱动的参数在同一帧被渐变混合逐步接管（权重升满后全权接管），未驱动
+   * 参数缓动到默认/节点值，两头都无跳变。resetParameters（硬写）保留给
+   * "重置交互"入口——那里本来就是刻意瞬跳。
+   *
+   * @param {number} [durationSec] 缓动窗口（秒）：mount.js 按起播 clip 从
+   *   fades.json 查传入，与新动作渐入严格同窗；0 秒转场（login/home/
+   *   change_* 硬切）同帧瞬跳落定，等价旧版硬写
+   */
+  beginSmoothReset(durationSec = RESET_FADE) {
+    const core = this.model.internalModel.coreModel
+    const entries = []
+    const count = core.getParameterCount()
+    for (let i = 0; i < count; i++) {
+      if (this.preserveIdx.has(i)) continue
+      const from = core.getParameterValueByIndex(i)
+      const target = core.getParameterDefaultValue(i)
+      if (from !== target) entries.push({ idx: i, from, target })
+    }
+    // 状态机/摆位参数：实时值偏离节点（打断残留，如菜单摊到一半）时缓动
+    // 对齐到协议态。与旧版 resetParameters 相同的节点读取时机（先于
+    // trackMotionStart 结算被顶掉的挂起动作），语义不变只是落笔变缓
+    for (const [pid, value] of this.node) {
+      const idx = core.getParameterIndex(pid)
+      if (idx < 0 || idx >= core.getParameterCount()) continue
+      const from = core.getParameterValueByIndex(idx)
+      if (from !== value) entries.push({ idx, from, target: value })
+    }
+    if (durationSec <= 0) {
+      // 0 秒转场（login/home/change_* 硬切）：同帧瞬跳落定，等价旧版硬写
+      for (const e of entries) core.setParameterValueByIndex(e.idx, e.target)
+      this._resetTween = null
+      return
+    }
+    this._resetTween = { start: performance.now() / 1000, duration: durationSec, entries }
+  }
+
+  /**
+   * 平滑复位每帧落笔（挂 beforeMotionUpdate：写在动作求值前——新动作曲线
+   * 同帧按渐变权重混合本帧写入值，权重升满后全权接管；物理/氛围/机器层
+   * 在动作求值后各自写入，不受影响）。缓动曲线与内核渐变同款 sine。
+   */
+  applySmoothReset() {
+    const tween = this._resetTween
+    if (!tween) return
+    const t = (performance.now() / 1000 - tween.start) / tween.duration
+    const core = this.model.internalModel.coreModel
+    if (t >= 1) {
+      // 末帧补齐目标值再收窗：t 一旦越窗（帧尖峰）最后一笔 k 可能未到 1
+      for (const e of tween.entries) core.setParameterValueByIndex(e.idx, e.target)
+      this._resetTween = null
+      return
+    }
+    const k = 0.5 - 0.5 * Math.cos(Math.PI * t)
+    for (const e of tween.entries) {
+      core.setParameterValueByIndex(e.idx, e.from + (e.target - e.from) * k)
+    }
+  }
+
+  /**
+   * 按节点硬复位参数（"重置交互"入口专用，刻意瞬跳）：非状态机参数回到
+   * moc3 默认值，状态机参数对齐到跟踪节点的值。动作起播路径改走
+   * beginSmoothReset（见其注释）。
    */
   resetParameters() {
     const core = this.model.internalModel.coreModel

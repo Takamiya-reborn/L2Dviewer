@@ -1,9 +1,12 @@
 /**
  * 模型挂载编排：销毁旧模型 -> Live2DModel.from -> 依序装配氛围层、交互
  * 状态机、拖拽参数机 -> 初始 idle -> 取景适配 -> 上报动作组。写回
- * ctx.model / ctx.runtime / ctx.orch / ctx.l2dOffset / ctx.hasOrch。
+ * ctx.model / ctx.runtime / ctx.orch / ctx.l2dOffset / ctx.fades /
+ * ctx.hasOrch。
  */
 import { Live2DModel } from 'pixi-live2d-display/cubism4'
+import { installColorPatch } from './colorPatches'
+import { installPalette } from './palette'
 import { loadAmbient } from '../utils/ambient'
 import { DragOrchestrator, loadL2dConfig } from '../utils/dragmachine'
 import { InteractionRuntime, loadInteraction } from '../utils/interaction'
@@ -32,6 +35,8 @@ async function mountModelInner(ctx, url) {
   const seq = (ctx._mountSeq = (ctx._mountSeq ?? 0) + 1)
   const stale = () => seq !== ctx._mountSeq
   const app = ctx.app
+  // per-drawable multiply/screen 渲染补丁（调色板换色的渲染侧，装一次全局生效）
+  installColorPatch()
   ctx.status.value = '加载模型…'
   ctx.hintsCtl.destroy()
   if (ctx.model) {
@@ -54,7 +59,27 @@ async function mountModelInner(ctx, url) {
     return
   }
   ctx.model = model
-  model.internalModel.motionManager.on('motionStart', () => ctx.runtime?.resetParameters())
+  // 逐 clip 转场时长表（<id>.fades.json，extract.py 的 animator_fades 从
+  // bundle 的 AnimatorController 提取）：motionPatches.createMotion 按它设置动作渐入
+  // 时长，动作起播的复位缓动窗口也取同一值——两处严格同源。缺失时全旁路
+  // （渐变走 config 兜底 300ms、复位走 RESET_FADE 兜底）
+  ctx.fades = await fetch(url.replace(/model3\.json$/, 'fades.json'))
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null)
+  if (stale()) {
+    model.destroy()
+    return
+  }
+  // 动作起播的参数复位改走平滑路径（见 runtime.beginSmoothReset）：瞬跳会
+  // 毁掉动作交叉渐变的混合起点。落笔钩子在 runtime 创建后挂（下方
+  // beforeMotionUpdate），这里只登记缓动窗口；窗口取起播 clip 的转场时长
+  // （trackMotionStart 尚未结算挂起动作，节点读取时机不变）
+  model.internalModel.motionManager.on('motionStart', (group, index) => {
+    const clip = ctx.runtime?.clipOf(group, index)
+    ctx.runtime?.beginSmoothReset(
+      clip ? (ctx.fades?.transitions?.[clip] ?? ctx.fades?.default ?? undefined) : undefined,
+    )
+  })
   // 常驻氛围层：effect 组（垂发/扶手布的微风摆动）在游戏内永远循环叠加，
   // 这里挂在 afterMotionUpdate（主动作求值后、saveParameters 前）直写参数，
   // 物理与姿态系统不触碰这些参数，故不会与本层互相覆盖；
@@ -81,6 +106,11 @@ async function mountModelInner(ctx, url) {
     return
   }
   ctx.runtime = new InteractionRuntime(model, interaction)
+  // 调色板控制层（色轴参数 skin 没有时整层旁路）
+  installPalette(ctx, model)
+  // 平滑复位每帧落笔：先于机器叠加层的 restoreLayer 注册（同事件按注册序
+  // 触发）——机器加/乘参数的底值还原保持原语义，不被缓动写入覆盖
+  model.internalModel.on('beforeMotionUpdate', () => ctx.runtime.applySmoothReset())
   // 拖拽参数机：数据与模型同目录（<id>.l2d.json，extract.py 烘焙产物）；
   // 播放回调解析 clip 名 -> 动作组（白名单里存的是 clip 名，如 touch_idle1、
   // idle1），机器分区命中后由编排器接管路由

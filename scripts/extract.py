@@ -9,6 +9,7 @@
 
     <id>.moc3 / <id>.model3.json / <id>.physics3.json / <id>.char.json
     <id>.interaction.json   （clips 交互状态数据 + animator 动作编号路由表）
+    <id>.fades.json         Animator 转场时长表（逐 clip 交叉渐变秒数）
     <id>.defaults.json      参数默认值/min/max（解析自 moc3 二进制，见下）
     <id>.inventory.json     bundle 全量参考：GameObject 表、全部组件 typetree
                             （CubismMoc._bytes 除外——.moc3 文件本身已落盘）、
@@ -667,6 +668,87 @@ def animator_routing(env) -> dict | None:
     return {"paramKinds": param_kinds, "states": states}
 
 
+def animator_fades(env) -> dict | None:
+    """解包 AnimatorController 的 AnyState 转场时长表（按 clip 名）。
+
+    每条 AnyState 转场自带过渡时长（m_TransitionDuration）——游戏内各动作
+    过渡快慢不一的出处。m_HasFixedDuration=True 时为绝对秒；False 时为
+    目标 clip 长度的归一化比例，实测仅 0 值出现（login/home/change_* 硬切，
+    0 比例即 0 秒），非零归一化需要 clip 长度折秒，遇到则放弃该条并告警。
+    键取转场目标状态的 clip 名，blend tree 状态把全部节点的 clip 都记上
+    （同一转场进状态，各节点时长一致）；clip 引用跨 bundle 解析不到时退回
+    状态名（本游戏状态名与 clip 名同风格）。
+
+    产物 fades.json：{"default": 众数秒, "transitions": {clip: 秒}}，
+    default 供表外 clip 兜底。运行时 motionPatches.createMotion 按表逐动作
+    设置交叉渐变时长，交互复位缓动窗口同源（mount.js / runtime.js
+    beginSmoothReset）。实测分布：系统/触摸老条目 0.5s，新条目（编号较大者
+    与 _ex 变体）0.25s，login/home/change_in/change_out 0s 硬切。
+    """
+    ctrl = None
+    clip_names = {}
+    for obj in env.objects:
+        if obj.type.name == "AnimatorController":
+            ctrl = obj.read_typetree()
+        elif obj.type.name == "AnimationClip":
+            clip_names[obj.path_id] = obj.read().m_Name
+    if ctrl is None:
+        return None
+    tos = {h: n for h, n in ctrl["m_TOS"]}
+    clip_refs = ctrl["m_AnimationClips"]
+
+    transitions = {}
+    for sm in ctrl["m_Controller"]["m_StateMachineArray"]:
+        smd = sm["data"] if "data" in sm else sm
+        arr = smd.get("m_StateConstantArray", [])
+        names = {
+            i: tos.get(
+                (st["data"] if "data" in st else st).get("m_FullPathID"), f"state{i}"
+            ).split(".")[-1]
+            for i, st in enumerate(arr)
+        }
+        # 状态 -> 本状态 blend tree 全部节点的 clip 名
+        clips = {}
+        for i, st in enumerate(arr):
+            sd = st["data"] if "data" in st else st
+            for bti in sd.get("m_BlendTreeConstantIndexArray") or []:
+                if bti is None or bti < 0:
+                    continue
+                bt = sd["m_BlendTreeConstantArray"][bti]["data"]
+                for node in bt.get("m_NodeArray", []):
+                    cid = node["data"]["m_ClipID"]
+                    if 0 <= cid < len(clip_refs):
+                        name = clip_names.get(clip_refs[cid].get("m_PathID", 0))
+                        if name:
+                            clips.setdefault(i, []).append(name)
+
+        for t in smd.get("m_AnyStateTransitionConstantArray", []):
+            d = t["data"]
+            duration = d.get("m_TransitionDuration")
+            if duration is None:
+                continue
+            if not d.get("m_HasFixedDuration") and duration != 0:
+                print(f"[warn] fixed=False 且非零的转场时长 {duration}，无法折秒，跳过")
+                continue
+            dst = d["m_DestinationState"]
+            for key in clips.get(dst) or [names.get(dst)]:
+                if not key:
+                    continue
+                prev = transitions.get(key)
+                if prev is not None and prev != duration:
+                    print(f"[warn] {key}: {prev}s 与 {duration}s 冲突，保留先值")
+                    continue
+                transitions[key] = duration
+
+    if not transitions:
+        return None
+    counts = {}
+    for sec in transitions.values():
+        counts[sec] = counts.get(sec, 0) + 1
+    default = max(counts, key=counts.get)
+    return {"default": default, "transitions": dict(sorted(transitions.items()))}
+
+
 LUA_ENTRY_RE = re.compile(r"^\tpg\.base\.ship_l2d\[(\d+)\] = \{$", re.MULTILINE)
 LUA_TEMPLATE_RE = re.compile(
     r"^_G\.pg\.base\.ship_skin_template\[(\d+)\] = \{$", re.MULTILINE
@@ -1035,6 +1117,15 @@ def main() -> None:
         json.dumps(interaction_data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    # --- 逐 clip 转场时长表（fades.json，见 animator_fades 注释）
+    fades = animator_fades(env)
+    if fades:
+        (out_dir / f"{model_id}.fades.json").write_text(
+            json.dumps(fades, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
+    else:
+        print("[warn] 未找到 AnimatorController 转场时长，跳过 fades.json")
 
     # --- bundle 全量参考数据（逆向用；CubismMoc._bytes 已是 .moc3 文件，剔除避免重复）
     for rec in mono_records:
