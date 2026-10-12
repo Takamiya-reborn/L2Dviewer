@@ -1,11 +1,10 @@
 /**
- * 极简断言套件：各 test_*.mjs 复用同一套 ok/FAIL 行格式与退出码约定
- * （0 全过 / 1 有失败），run_all.mjs 看退出码汇总、解析 SUMMARY 行出计数。
+ * 极简断言套件：各 test_*.mjs 复用同一套 ok/FAIL 行格式与退出码约定（0 全过 / 1 有失败），run_all.mjs 看退出码汇总、解析 SUMMARY 行出计数。
  *
  * 断言三件套（解构出来用，内部不走 this）：
  * - check(name, cond, detail?)  布尔断言，失败时同行追加 detail（可 grep）
  * - eq(name, actual, expected)  严格/深比较，失败自动打印实际 vs 期望
- * - near(name, actual, expected, eps?)  浮点比较（各文件手写 Math.abs 的收编）
+ * - near(name, actual, expected, eps?)  浮点比较
  * section(title) 打分组行，可选。
  */
 

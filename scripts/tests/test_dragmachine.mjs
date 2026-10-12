@@ -103,8 +103,7 @@ const orch2 = new DragOrchestrator(
       // relation 联动机：101 跟随拖动量，mode 2 additive，offset_x 14，smooth 0.1s
       { id: 22, draw_able_name: 'TouchDrag2', parameter: '', relation_parameter: { list: [{ type: 101, name: 'relx' }] }, range: [-30, 30], offset_x: 14, mode: 2, smooth: 100 },
       // type 3 长按机：按住 0.1s 播 h1（time 取 action_list 项），last 松手收尾。
-      // 第二项 time 10：按住期不到回绕（一轮回绕会触发 slot11 松开，见
-      // section 11 的专测），松手收尾断言才能走 last 分支
+      // 第二项 time 10：按住期不到回绕（一轮回绕会触发 slot11 松开，见 section 11 的专测），松手收尾断言才能走 last 分支
       { id: 23, draw_able_name: 'TouchDrag2', parameter: '', action_trigger: { type: 3, last: 1, action_list: [{ action: 'h1', time: 0.1 }, { action: 'h2', time: 10 }] }, limit_time: 10 },
       // type 9 点参机：他参 c1 贴近 num（±0.05）才触发
       { id: 24, draw_able_name: 'TouchDrag3', parameter: '', action_trigger: { type: 9, parameter: 'c1', num: 0, action: 'stage0' } },
@@ -129,8 +128,7 @@ const drive = (frames) => {
 // --- 5) 同名分区广播按下 + type 8 充能 + type 3 长按 ---
 check('分区按下广播到全部同名机器', orch2.onDown('touch_drag2', { x: 0, y: 0 }) === true && orch2.machines.filter((m) => m._active).length === 3)
 fakeNow = performance.now() / 1000 // 对齐机器 onDown 落下的按下时刻
-// ableFlag 开窗监听：type 3 触发瞬间必须先 setMachineAble(false) 再恢复 true，
-// 否则按住屏蔽会把本机触发的动作整个拦下（wuzang_3 充能姿势播不出的根因）
+// ableFlag 开窗监听：type 3 触发瞬间必须先 setMachineAble(false) 再恢复 true，否则按住屏蔽会把本机触发的动作整个拦下
 const ableLog = []
 const origSetAble = orch2.setMachineAble.bind(orch2)
 orch2.setMachineAble = (v) => {
@@ -156,8 +154,7 @@ near('relation 平滑收敛到拖动量', mRel.relations[0].value, 10, 0.05)
 params2.relx = 0
 orch2.applyLayer(fakeModel2.internalModel.coreModel)
 near('relation additive 写模型', params2.relx, 10, 0.05)
-// 引擎 save/load 会把叠加滞留到下帧，须两阶段还原再叠加，否则无动作覆盖的
-// additive 参数逐帧累积飞掉（游戏端"每帧还原参数再叠加"的等价实现）
+// 引擎 save/load 会把叠加滞留到下帧，须两阶段还原再叠加（游戏端"每帧还原参数再叠加"的等价实现），否则无动作覆盖的 additive 参数逐帧累积飞掉
 const core2 = fakeModel2.internalModel.coreModel
 for (let i = 0; i < 120; i++) {
   orch2.restoreLayer(core2)
@@ -174,8 +171,7 @@ check('type3 松手收尾播末项 h2 并回卷', played2.at(-1) === 'h2' && m3.
 near('充能机松手吸附 type2 档位(0.333 → 0.21)', m8.parameterTargetValue, 0.21)
 
 // --- 8) type 9 点参：他参贴近才触发 ---
-// 旧判据漏了档位：充能残留 c1≈0.21 时两档都不贴近，分区却画绿（绿但白点，
-// 会把排查引向"点击没路由"的歧路）。修正后任一台档位贴近才绿
+// 可交互判据须含档位：c1 与任一台的档位贴近才算绿（多台同名分区逐一判定）
 params2.c1 = 0.21
 check('type9 两档都不贴近 → 分区红', orch2.zoneInteractable('touch_drag3') === false)
 params2.c1 = 0
@@ -203,9 +199,8 @@ orch2.idleIndex = 1
 orch2.changeIdleIndex(0)
 check('revert_idle_index [0] 变体回 0 时复位', m8.parameterTargetValue === 0 && m8.offsetDragTargetX === 0)
 
-// --- 10) relation 103 开关下标对齐（shengluyisi_5 touch_drag20 实况复刻）---
-// 游戏是 Lua 1-based 表 relation_value[actionListIndex]；JS 数组要 -1，否则
-// 初值取到第二档、开关整体反相（初值显示交互一次后的图层）
+// --- 10) relation 103 开关下标对齐（shengluyisi_5 touch_drag20 同款配置）---
+// 游戏是 Lua 1-based 表 relation_value[actionListIndex]；JS 数组要 -1，否则初值取到第二档、开关整体反相
 const params3 = { tg20: 1 } // 1 = moc3 默认（图层默认摊开），机器初值须压回 0
 const core3 = {
   getParameterIndex: (p) => (p === 'tg20' ? 0 : -1),
@@ -249,8 +244,7 @@ const orch4 = new DragOrchestrator(
     skin_id: 'test4',
     entries: [
       // 两项各 0.1s：按住 0.2s 走完一轮，回绕瞬间 slot11 松开拖拽。
-      // limit_time 0.05：triggerAction 拉满的冷却在游戏里靠 ON_ACTION_PLAY
-      // 塌缩回 0.2 解锁，测试不模拟播放，用小冷却等价驱动两连击
+      // limit_time 0.05：triggerAction 拉满的冷却在游戏里靠 ON_ACTION_PLAY 塌缩回 0.2 解锁，测试不模拟播放，用小冷却等价驱动两连击
       { id: 41, draw_able_name: 'TW', parameter: '', action_trigger: { type: 3, last: 1, action_list: [{ action: 'w1', time: 0.1 }, { action: 'w2', time: 0.1 }] }, limit_time: 0.05 },
     ],
   },
@@ -329,7 +323,7 @@ mL8.onDown({ x: 0, y: 0 }, false)
 check('type8 按下不上锁（锁在 handler）', orch5.machineAble === false)
 mL8.onUp({ x: 100, y: 0 })
 
-// 锁是播放闸不是移动闸：锁开启时 onMove 仍路由到按压中的机器（Step 5 删锁门的回归）
+// 锁是播放闸不是移动闸：锁开启时 onMove 仍路由到按压中的机器
 mLm.onDown({ x: 0, y: 0 }, false)
 orch5.pressLock('测试上锁', true)
 orch5.onMove({ x: 140, y: 0 })
@@ -344,7 +338,7 @@ check('同值 changeIdleIndex 不复位 revert 机', m8.parameterTargetValue ===
 orch2.changeIdleIndex(0, false) // 真变化回 0：revert_idle_index [0] 复位
 near('真变化回 0 才复位（第 9 节只测了这侧）', m8.parameterTargetValue, 0)
 
-// --- 14) resetAll 契约一揽子（machine.reset 补漏的回归：跨域残留全归位）---
+// --- 14) resetAll 契约一揽子（跨域残留全归位）---
 mL12.extendActionFlag = true
 mL2.parameterTargetValue = 0.7
 mL2.parameterSmoothTime = 99 // 松手路径会把平滑时间留在 smoothRevert，人为拉爆
@@ -363,15 +357,10 @@ check('resetAll 归位下标/冷却/触发标记/累计',
 near('resetAll 参数回 startValue', mL2.parameterTargetValue, mL2.startValue)
 
 // --- 15) action='idle' 先切变体后播（wuzang_3 背景板摆位机 TouchDrag4/18）---
-// 游戏里 play("idle") 的 SetAction 与 applyActiveData 的 SetInteger("idle",8)
-// 同帧落账，Animator 下帧统一切子状态 → 播出即新变体 clip，且游戏播放器无
-// "重播同支循环 idle 被拒"这回事。移植端若按"先播后切"原序，playLuaAction
-// 会因同支 clip 已在循环被引擎 reserve 拒绝 → activeData 不入账 → 摆位永远
-// 切不动。onActionApply 现先 changeIdleIndex 再播，播放的是新变体 clip
+// 游戏里 play("idle") 的 SetAction 与 applyActiveData 的 SetInteger("idle",8) 同帧落账，Animator 下帧统一切子状态 → 播出即新变体 clip，且游戏播放器无"重播同支循环 idle 被拒"这回事。
+// 移植端若按"先播后切"原序，playLuaAction 会因同支 clip 已在循环被引擎 reserve 拒绝而切不动变体，故 onActionApply 先 changeIdleIndex 再播，播放的是新变体 clip
 const playedBg = []
-// 播放调用时刻的变体号：先切后播的关键断言——playLuaAction 按"播放时的
-// idleIndex"解析变体 clip（playAction mock 收到的动作名恒为 'idle'，变体
-// 解析在其内部），变体已切 = 引擎拿到的是新变体 clip 而非在循环的同支
+// 播放调用时刻的变体号：先切后播的关键断言——playLuaAction 按"播放时的 idleIndex"解析变体 clip（playAction mock 收到的动作名恒为 'idle'，变体解析在其内部），变体已切 = 引擎拿到的是新变体 clip 而非在循环的同支
 const variantAtPlay = []
 const orchBg = new DragOrchestrator(
   makeModel(makeCoreModel({ bg1: { default: 0 } }), { motions: { idle: [{ File: 'motions/idle.motion3.json' }, { File: 'motions/idle8.motion3.json' }] } }),
@@ -414,17 +403,13 @@ const orchNoGroup = new DragOrchestrator(
     return true
   },
 )
-// 无 idle 组时维持先播后切：applyActiveData 在 play 的 await 之后才入账，
-// 断言要等微任务排空（先切路径的落账是同步的，无需等）
+// 无 idle 组时维持先播后切：applyActiveData 在 play 的 await 之后才入账，断言要等微任务排空（先切路径的落账是同步的，无需等）
 await machinesById(orchNoGroup)[33].applyTrigger()
 check('无 idle 组时维持先播后切（播放时变体仍 0，播后入账 8）', variantNoGroup.at(-1) === 0 && orchNoGroup.idleIndex === 8)
 
 // --- 16) 起播即清滞留播放中（被顶掉的反应动作不发 motionFinish 的回归）---
-// wuzang_3 TouchDrag2 长按充能：touch_drag2 播放中松手，收尾切 idle（FORCE）
-// 顶掉在播姿势——pixi 只在动作队列排空且 playing 仍真时发一次 motionFinish
-// （index.es.js update()），被顶掉的姿势不发；noteMotionStart 若不清旧状态，
-// isPlaying 滞留真值 → 全机 ignore_action 拒按 + 触发处理器 l2dIsPlaying 早退，
-// 松手后交互整体锁死（HUD 恒显"播放中"）
+// pixi 只在动作队列排空且 playing 仍真时发一次 motionFinish（index.es.js update()），被顶掉的动作不发。
+// noteMotionStart 须清旧播放态，否则 isPlaying 滞留真值 → 全机 ignore_action 拒按 + 触发处理器 l2dIsPlaying 早退
 orch.noteMotionStart('act1', false)
 check('反应动作起播置播放中', orch.isPlaying === true && orch.playActionName === 'act1')
 orch.noteMotionStart('idle1', true) // 收尾切 idle：FORCE 顶掉 act1

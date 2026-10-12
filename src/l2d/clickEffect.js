@@ -1,7 +1,6 @@
 /**
- * 触点涟漪：按下出现、lerp 跟随指针、抬起消散的全局触摸反馈，与交互判定
- * 无关。三层粒子（菱环扩张 / 辉光弹出 / 菱形飞散），开关在 HUD 工具栏，
- * localStorage 持久化。
+ * 触点涟漪：按下出现、lerp 跟随指针、抬起消散的全局触摸反馈，与交互判定无关。
+ * 三层粒子（菱环扩张 / 辉光弹出 / 菱形飞散），开关在 HUD 工具栏，localStorage 持久化。
  */
 import { Container, Rectangle, Sprite, Texture, BLEND_MODES } from 'pixi.js'
 

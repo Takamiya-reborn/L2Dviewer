@@ -1,6 +1,4 @@
-/**
- * 皮肤目录/JSON 读取小工具（probe 与 helper 共用）。
- */
+/** 皮肤目录/JSON 读取小工具（probe 与 helper 共用）。 */
 import fs from 'fs'
 import path from 'path'
 

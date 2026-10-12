@@ -13,7 +13,7 @@
 
 </div>
 
-碧蓝航线 Live2D 皮肤查看器。从游戏客户端提取 Live2D 资源，重组为标准 Cubism 4 模型，在浏览器中原画质还原角色的动画与交互（待机、点击反应、拖拽视线跟随等），并提供按角色/皮肤分类的图鉴浏览。
+碧蓝航线 Live2D 皮肤查看器。从游戏客户端提取 Live2D 资源，重组为标准 Cubism 模型（Cubism 4 与 5 两代 moc3），在浏览器中原画质还原角色的动画与交互（待机、点击反应、拖拽视线跟随等），并提供按角色/皮肤分类的图鉴浏览。
 
 - [azurlane.md](docs/azurlane.md) — 游戏资源格式与交互状态机原理
 - [unpack.md](docs/unpack.md) — 提取脚本 `extract.py` 的用法、产物与转换细节
@@ -44,7 +44,7 @@
 | 层         | 技术                               | 用途                                                  |
 | ---------- | ---------------------------------- | ----------------------------------------------------- |
 | 前端框架   | Vue 3 + Vite                       | 图鉴页面与皮肤清单                                    |
-| 渲染       | PixiJS + pixi-live2d-display       | L2D 舞台渲染（Cubism 4）                              |
+| 渲染       | PixiJS + pixi-live2d-display       | L2D 舞台渲染（Cubism 4/5 模型）                       |
 | 提取工具链 | Python + UnityPy                   | 解包 UnityFS、读 moc3/贴图/动画曲线                   |
 | 动画转换   | Unity AnimationClip → motion3.json | 关键帧曲线换算 Cubism 贝塞尔段                        |
 | 逆向参考   | Il2CppDumper                       | dump 游戏 C# 程序集（逆向期语义参考，使用流程不需要） |
@@ -54,7 +54,7 @@
 
 游戏资源的目录、文件职责与开发技术见 [azurlane.md](docs/azurlane.md)；提取、解析以及如何将结果还原为可运行模型见 [unpack.md](docs/unpack.md)。查看器本身只保留以下几条实现纲领：
 
-- 前端使用 Vue 3 + Vite，PixiJS 与 Cubism 4 运行时负责模型加载和渲染。
+- 前端使用 Vue 3 + Vite，PixiJS 与 pixi-live2d-display 负责模型加载和渲染；bundled 的 Cubism Core 为 5.x，向后兼容加载 4/5 两代 moc3。
 - dev server 实时扫描 `models/<角色>/<皮肤id>/`，前端按模型入口加载皮肤，无需手工登记。
 - 标准 Cubism 资源负责渲染，`char.json`、`interaction.json` 和 `l2d.json` 作为本项目扩展数据，分别承载基础交互参数、动作状态信息和参数机配置。
 - `fades.json` 保存 Unity Animator 按动作提取的 AnyState 转场时长；查看器按 clip 应用交叉渐变，并让交互参数复位使用同一时长，缺失时回退到 300ms。
@@ -68,7 +68,7 @@
 scripts/              # 提取脚本：pull_bundles.py（资源拉取）、pull_lua.py（Lua 快照拉取）、extract.py（解包重组并烘焙交互配置与 fades.json）；pull_cs.py / disasm.py 为逆向期 C# 语义核对（使用流程不需要）
 tools/adb/            # Android 平台工具（Apache 2.0，NOTICE 随目录分发）
 tools/Il2CppDumper/   # 游戏 C# 程序集 dump 工具（MIT，逆向期参考，仅保留 x64 主程序与 config.json）
-models/               # 导出的标准 Cubism 4 模型，按 <角色>/<皮肤id> 两级目录组织（不入库）
+models/               # 导出的标准 Cubism 模型（moc3 v4/v5），按 <角色>/<皮肤id> 两级目录组织（不入库）
 src/                  # Vue 前端（图鉴 + L2D 舞台 + 交互层）
 ├── components/       # UI：L2dStage（瘦壳）+ tabs/ 侧栏 + debug/HudPanel（HUD 面板）
 ├── l2d/              # 舞台核心（普通模块 + ctx 对象，不依赖 vue）：motionPatches（动作库补丁）、camera（取景与拖拽标定）、mount（模型挂载装配）、actions（播放 API）、gestures（指针手势）、hud（每帧读数）
@@ -114,7 +114,7 @@ uv run scripts/pull_bundles.py <skin_id> --host [host:port]
 #    仅基础交互（点击门控、拖拽视线）不需要它
 python scripts/pull_lua.py
 
-# 4. 解包重组为标准 Cubism 4 模型，并自动烘焙 ship_l2d 交互配置
+# 4. 解包重组为标准 Cubism 模型（v4/v5），并自动烘焙 ship_l2d 交互配置
 uv run scripts/extract.py <skin_id>
 
 # 5. 启动查看

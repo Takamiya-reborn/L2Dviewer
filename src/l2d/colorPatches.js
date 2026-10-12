@@ -1,23 +1,14 @@
 /**
- * per-drawable multiply/screen 颜色渲染补丁（Cubism 4.2 语义，调色板换色的
- * 渲染侧）。
+ * per-drawable multiply/screen 颜色渲染补丁（Cubism 4.2 语义，调色板换色的渲染侧）。
  *
- * moc3 v4 关键帧颜色（参数→ArtMesh multiply/screen 绑定）由 Core 在 update()
- * 时算入 model.drawables.multiplyColors/screenColors（本机探针证实 wuzang_3
- * 有 576 个件被 touch_drag11~14 等参数驱动颜色——调色板 RGB 变化的数据本体
- * 就在这）。pixi-live2d-display 0.4.0 内置的 Cubism 4.0 渲染器没有这组
- * uniform（官方 4.2 才加入），补丁三步：
- *   1. setGl 包装 gl.shaderSource——三个绘制片元着色器换成官方 4.2+ 源
- *      （u_multiplyColor/u_screenColor，公式逐字取自官方仓库
- *      Shaders/WebGL/fragshadersrc*.frag）；遮罩生成 shader 不需要色，不动。
+ * moc3 v4 关键帧颜色（参数→ArtMesh multiply/screen 绑定）由 Core 在 update() 时算入 model.drawables.multiplyColors/screenColors（如 wuzang_3 有 576 个件被 touch_drag11~14 等参数驱动颜色——调色板 RGB 变化的数据本体就在这）。
+ *
+ * pixi-live2d-display 0.4.0 内置的 Cubism 4.0 渲染器没有这组 uniform（官方 4.2 才加入），补丁三步：
+ *   1. setGl 包装 gl.shaderSource——三个绘制片元着色器换成官方 4.2+ 源（u_multiplyColor/u_screenColor，公式逐字取自官方仓库 Shaders/WebGL/fragshadersrc*.frag）；遮罩生成 shader 不需要色，不动。
  *   2. 复刻 doDrawModel 逐件循环（原实现加一行）记录当前 drawable 下标。
- *   3. setupShaderProgram 原实现以 useProgram 收尾、gl.drawElements 在
- *      drawMesh 里 setup 返回后才调用——补丁在原调用返回后补写两个
- *      uniform，程序仍在用，正好赶在绘制前。
+ *   3. setupShaderProgram 原实现以 useProgram 收尾、gl.drawElements 在 drawMesh 里 setup 返回后才调用——补丁在原调用返回后补写两个 uniform，程序仍在用，正好赶在绘制前。
  *
- * 无效色规则：multiply/screen 的 rgb 全 0 是编辑器"未设置"残留（wuzang_3
- * 约 300 个默认不可见的特效件烘焙值），官方语义会把它们渲成纯黑，动作
- * 中途显形会闪黑——这种组合回退默认色 (1,1,1)/(0,0,0)。
+ * 无效色规则：multiply/screen 的 rgb 全 0 是编辑器"未设置"残留（wuzang_3 约 300 个默认不可见的特效件烘焙值），官方语义会把它们渲成纯黑、显形后可见——这种组合回退默认色 (1,1,1)/(0,0,0)。
  */
 import { CubismRenderer_WebGL, CubismShader_WebGL } from 'pixi-live2d-display/cubism4'
 
@@ -40,8 +31,8 @@ const SHADER_REPLACEMENTS = new Map([
 let installed = false
 
 /**
- * 安装一次（幂等，原型级补丁跨模型共享）。*无需*每舞台调用——补丁读
- * setupShaderProgram 入参里的 renderer 取模型与当前下标，无舞台态。
+ * 安装一次（幂等，原型级补丁跨模型共享）。
+ * 无需每舞台调用——补丁读 setupShaderProgram 入参里的 renderer 取模型与当前下标，无舞台态。
  */
 export function installColorPatch() {
   if (installed) return
@@ -118,8 +109,7 @@ export function installColorPatch() {
       locCache.set(program, locs)
     }
     if (!locs.mul && !locs.scr) return
-    // Core 原始模型：框架包装层 4.0 没有 getDrawableMultiplyColor，直读
-    // Core 暴露的 Float32Array（update() 已按当前参数算好关键帧色）
+    // Core 原始模型：框架包装层 4.0 没有 getDrawableMultiplyColor，直读 Core 暴露的 Float32Array（update() 已按当前参数算好关键帧色）
     const raw = renderer.getModel()?._model?.drawables
     if (!raw?.multiplyColors || !raw?.screenColors) return
     const mc = raw.multiplyColors

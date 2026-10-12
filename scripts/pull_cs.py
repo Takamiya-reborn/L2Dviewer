@@ -16,13 +16,9 @@
     dump/script.json / stringliteral.json 等
 
 说明:
-    - Lua 控制层（.tmp/lua）之外的另一半真相在 C# 层：Live2dChar 的命中检测
-      （GetDragPart）、参数叠加（AddParameterValue/ChangeParameterData）等都在
-      dump.cs 里查签名，函数体按需小窗口反汇编（勿全量扫描）
-    - Il2CppDumper 的 RequireAnyKey 会阻塞无头调用，跑 dump 前临时改写
-      tools/Il2CppDumper/config.json、结束后还原
-    - 包名自动匹配 pm list packages 里的 azurlane；split APK（base + 各 split）
-      会逐个提取，需要的两个文件通常在 base 里
+    - Lua 控制层（.tmp/lua）之外的另一半真相在 C# 层：Live2dChar 的命中检测（GetDragPart）、参数叠加（AddParameterValue/ChangeParameterData）等都在 dump.cs 里查签名，函数体按需小窗口反汇编（勿全量扫描）
+    - Il2CppDumper 的 RequireAnyKey 会阻塞无头调用，跑 dump 前临时改写 tools/Il2CppDumper/config.json、结束后还原
+    - 包名自动匹配 pm list packages 里的 azurlane；split APK（base + 各 split）会逐个提取，需要的两个文件通常在 base 里
 """
 
 import argparse

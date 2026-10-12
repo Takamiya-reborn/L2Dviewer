@@ -7,8 +7,7 @@
     uv run scripts/disasm.py live2dchar
     uv run scripts/disasm.py live2dchar Drag,Get
 
-默认读取 .tmp/cs/libil2cpp.so、.tmp/cs/dump/dump.cs 和
-.tmp/cs/dump/script.json。相关文件由 pull_cs.py 生成。
+默认读取 .tmp/cs/libil2cpp.so、.tmp/cs/dump/dump.cs 和 .tmp/cs/dump/script.json，相关文件由 pull_cs.py 生成。
 """
 
 import argparse

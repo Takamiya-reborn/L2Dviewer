@@ -1,6 +1,5 @@
-// 冒烟测试：InteractionRuntime 有向图状态机（node scripts/tests/test_interaction.mjs，
-// 在仓库根目录跑）。fixture 复刻 touch_idle1（摊开菜单）→ touch_idle2（分支，
-// 前置 caidan=1）→ touch_idle3（收尾带回 0）这条游戏内实况链路。
+// 冒烟测试：InteractionRuntime 有向图状态机（node scripts/tests/test_interaction.mjs，在仓库根目录跑）。
+// fixture 复刻 touch_idle1（摊开菜单）→ touch_idle2（分支，前置 caidan=1）→ touch_idle3（收尾带回 0）这条游戏内实况链路。
 import { suite } from './helpers/suite.mjs'
 import { makeCoreModel, makeModel } from './helpers/fakes.mjs'
 
@@ -31,9 +30,8 @@ const clips = {
   touch_body: {},
   // end-only 参数：起播恒 0（由常规复位管理，不进节点、不构成门控）
   touch_drag1: { state: { sdrtx: [0, 1] } },
-  // 自指门控（wuzang_3 实况复刻）：以 qiu=1 起播、自身又是唯一 end=1 的动作
-  // ——qiu 是连续量参数（moc 默认 0.7，氛围球），t0 打满亮只是硬设。前置
-  // 不可产出（自要求自供给）→ 豁免门控，分支必须可达
+  // 自指门控（wuzang_3 touch_special 同款）：以 qiu=1 起播、自身又是唯一 end=1 的动作——qiu 是连续量参数（moc 默认 0.7，氛围球），t0 打满亮只是硬设。
+  // 前置不可产出（自要求自供给）→ 豁免门控，分支必须可达
   touch_special: { state: { qiu: [1, 1] } },
 }
 const motions = {

@@ -1,7 +1,5 @@
-// 体检 models/ 下每套皮肤的 moc3 资产（node scripts/tests/test_models.mjs，在仓库根目录跑）。
-// 合并了昔日的 probe_deformed / probe_hitmesh：HitAreas 可解析、defaults 覆盖、
-// 提取清单在位为硬检查；默认姿态下命中区网格包围盒（isHit 的实际判定范围）打印
-// 出来供人工对照游戏内触发位置。
+// 体检 models/ 下每套皮肤的 moc3 资产（node scripts/tests/test_models.mjs，在仓库根目录跑）：
+// HitAreas 可解析、defaults 覆盖、提取清单在位为硬检查；默认姿态下命中区网格包围盒（isHit 的实际判定范围）打印出来供人工对照游戏内触发位置。
 // 模型不入库：本机 models/ 为空或缺 Cubism Core 时整支跳过。
 import fs from 'fs'
 import path from 'path'

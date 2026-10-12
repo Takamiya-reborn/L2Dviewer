@@ -1,6 +1,5 @@
-// 冒烟测试：ambient.js 的 motion3 曲线采样与参数直写（node scripts/tests/test_ambient.mjs，
-// 在仓库根目录跑）。fetch 打桩供 loadAmbient 取 fixture；段类型全覆盖
-// （线性/贝塞尔/阶跃/反阶跃）+ 范围钳制 + 时长取模循环。
+// 冒烟测试：ambient.js 的 motion3 曲线采样与参数直写（node scripts/tests/test_ambient.mjs，在仓库根目录跑）。
+// fetch 打桩供 loadAmbient 取 fixture；段类型全覆盖（线性/贝塞尔/阶跃/反阶跃）+ 范围钳制 + 时长取模循环。
 import { suite } from './helpers/suite.mjs'
 import { makeCoreModel } from './helpers/fakes.mjs'
 
@@ -17,7 +16,7 @@ const motion3 = {
     { Target: 'Parameter', Id: 'AmbBez', Segments: [0, 0, 1, 1 / 3, 1 / 3, 2 / 3, 2 / 3, 1, 1] },
     { Target: 'Parameter', Id: 'AmbStep', Segments: [0, 0, 2, 1, 1] },
     { Target: 'Parameter', Id: 'AmbInv', Segments: [0, 0, 3, 0.5, 1, 0, 1.5, 0.5] },
-    // 超程曲线（对照 shengluyisi_5 Param90/92 达 14.7 的实况）
+    // 超程曲线（对照 shengluyisi_5 Param90/92 曲线里 14.7 这类超程取值）
     { Target: 'Parameter', Id: 'AmbOver', Segments: [0, 0, 0, 1, 14.7] },
     // 非 Parameter 曲线应被过滤，不落参
     { Target: 'Model', Id: 'PartOpacity', Segments: [0, 0, 0, 1, 1] },

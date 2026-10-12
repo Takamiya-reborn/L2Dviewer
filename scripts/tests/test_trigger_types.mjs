@@ -1,6 +1,5 @@
-// 触发类型 1/5/12 冒烟测试（node scripts/tests/test_trigger_types.mjs，仓库根目录跑）
-//
-// 合成 ship_l2d 条目驱动 TRIGGER_HANDLERS 新增的三型：
+// 触发类型 1/5/12 冒烟测试（node scripts/tests/test_trigger_types.mjs，仓库根目录跑）。
+// 合成 ship_l2d 条目驱动 TRIGGER_HANDLERS 的三型：
 // - type 1 按压计时：num 邻域累计 triggerActionTime，到点触发，触发后不清零
 // - type 5 idle 常量跟随：变体匹配贴 target，无按压要求
 // - type 12 扩展门：参数区间裁决 ignore 拦截 / enable 直通（越按压锁），'idle' 恒放行
@@ -40,7 +39,7 @@ const orch = new DragOrchestrator(
   },
 )
 orch.debugHook = () => {}
-// 按条目 id 取机器（machines 序 = entries 序非 id 序，位置解构曾整体错位）
+// 按条目 id 取机器（machines 序 = entries 序非 id 序，位置解构会整体错位）
 const { 1: m1, 6: m1L, 2: m5, 3: m12a, 4: m12b, 5: mP } = machinesById(orch)
 
 let fail = 0

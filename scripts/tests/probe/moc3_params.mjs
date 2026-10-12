@@ -1,11 +1,5 @@
 /**
- * moc3 参数表探针（通用 CLI，可对任意皮肤目录使用）。
- *
- * 用 Cubism Core 直读 moc3，打印参数表（id / min / max / default / 类型），
- * 并可选与 <name>.l2d.json 的拖拽参数机配置交叉核对——机器写入值会被模型
- * 参数区间二次钳制（Cubism 参数落在 [min,max] 之外取边界），machine.range
- * 或 action_trigger.num 超出模型区间的配置在游戏里同样到不了位，是"按档位
- * /按位置的事件不出现"这类问题的判定依据。
+ * moc3 参数表探针（通用 CLI，可对任意皮肤目录使用）。用 Cubism Core 直读 moc3，打印参数表（id / min / max / default / 类型），并可选与 <name>.l2d.json 的拖拽参数机配置交叉核对——机器写入值会被模型参数区间二次钳制（Cubism 参数落在 [min,max] 之外取边界），machine.range 或 action_trigger.num 超出模型区间的配置在游戏里同样到不了位。
  *
  * 用法（仓库根目录）：
  *   node scripts/tests/probe/moc3_params.mjs models/wuzang/wuzang_3

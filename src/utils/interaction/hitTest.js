@@ -1,14 +1,9 @@
 // ---- 网格级命中检测（对齐游戏 Unity CubismRaycaster 的精确判定）----
 //
-// Web 端库的 model.hitTest 走 CubismModel.isHit，是顶点包围盒的矩形包含
-// 测试；游戏端（Unity）用 CubismRaycaster 对网格做逐三角形射线检测，判定
-// 范围是网格实际多边形——凹形、镂空网格的包围盒里大片空白区域游戏点不到。
-// 这里复刻后者：全局坐标经 toModelPosition 转模型空间（与库的 hitTest 同一
-// 转换），再对每个命中区 drawable 逐三角形做点包含测试。
+// Web 端库的 model.hitTest 走 CubismModel.isHit，是顶点包围盒的矩形包含测试；游戏端（Unity）用 CubismRaycaster 对网格做逐三角形射线检测，判定范围是网格实际多边形——凹形、镂空网格的包围盒里大片空白区域游戏点不到。
+// 这里复刻后者：全局坐标经 toModelPosition 转模型空间（与库的 hitTest 同一转换），再对每个命中区 drawable 逐三角形做点包含测试。
 //
-// 多分区同时命中时的取舍：Unity raycast 按射线距离排序，而 L2D 各 drawable
-// 近似共面、距离不可分；这里按渲染序降序取（视觉最上层优先），与"点到的是
-// 看得见的那个部位"的直觉和游戏表现一致。
+// 多分区同时命中时的取舍：Unity raycast 按射线距离排序，而 L2D 各 drawable 近似共面、距离不可分；这里按渲染序降序取（视觉最上层优先），与"点到的是看得见的那个部位"的直觉和游戏表现一致。
 //
 // 本模块为纯几何函数，零依赖（Node 侧可直接测试）。
 
@@ -25,11 +20,8 @@ function pointInTriangle(px, py, ax, ay, bx, by, cx, cy) {
 }
 
 /**
- * 网格级命中检测：返回指针位置上命中的分区名（HitAreas 的 Name），按渲染
- * 序降序（视觉最上层在前）。只按网格形状与渲染序判定，不过滤不透明度、
- * 不区分手势——这两步留给调用方（firstVisibleHit / pickMachineZone），
- * 与游戏 raycast（几何检测）和 Live2dChar（业务过滤）分层一致。
- *
+ * 网格级命中检测：返回指针位置上命中的分区名（HitAreas 的 Name），按渲染序降序（视觉最上层在前）。
+ * 只按网格形状与渲染序判定，不过滤不透明度、不区分手势——这两步留给调用方（firstVisibleHit / pickMachineZone），与游戏 raycast（几何检测）和 Live2dChar（业务过滤）分层一致。
  * @param model pixi-live2d-display 的 Live2DModel
  * @returns {string[]} 命中分区名，未命中为空数组
  */
@@ -79,9 +71,7 @@ function edgeUseCounts(indices) {
 }
 
 /**
- * 网格的边界边（只被一个三角形使用的边）。非流形网格连不成边界环时，
- * 调用方可退化为逐条描边界边——形状与环描边一致，只是没串成回路
- *
+ * 网格的边界边（只被一个三角形使用的边）。非流形网格连不成边界环时，调用方可退化为逐条描边界边——形状与环描边一致，只是没串成回路。
  * @returns {number[][]} [顶点a, 顶点b] 下标对
  */
 export function boundaryEdges(indices) {
@@ -93,11 +83,9 @@ export function boundaryEdges(indices) {
 }
 
 /**
- * 计算 drawable 网格的边界环（只被一个三角形使用的边连成的闭合回路），
- * 用于把真实网格形状画出来。三角形索引布局不随帧变化，拓扑结果按
- * drawable 下标缓存。非流形网格（边界顶点挂 >2 条边界边，Cubism 网格里
- * 偶见）无法连成干净回路，返回 null 由调用方退化为 boundaryEdges 描段。
- *
+ * 计算 drawable 网格的边界环（只被一个三角形使用的边连成的闭合回路），用于把真实网格形状画出来。
+ * 三角形索引布局不随帧变化，拓扑结果按 drawable 下标缓存。
+ * 非流形网格（边界顶点挂 >2 条边界边，Cubism 网格里偶见）无法连成干净回路，返回 null 由调用方退化为 boundaryEdges 描段。
  * @returns {number[][] | null} 环 = 顶点下标序列（首尾相接）
  */
 export function boundaryLoops(indices) {

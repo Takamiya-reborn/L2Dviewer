@@ -15,9 +15,8 @@
     --force         本地已存在也重拉（默认大小一致即跳过，可断点续传）
 
 说明:
-    - 索引文件 hashes-live2d.csv / version-live2d.txt 随任何拉取动作一并更新到
-      .tmp/（--list 除外），其他资源类别（语音、立绘等）同构清单换 --package 外的
-            类别名不在本脚本范围，按 docs/azurlane.md 手动 pull 即可
+    - 索引文件 hashes-live2d.csv / version-live2d.txt 随任何拉取动作一并更新到 .tmp/（--list 除外）。
+    - 其他资源类别（语音、立绘等）同构清单换 --package 外的类别名不在本脚本范围，按 docs/azurlane.md 手动 pull 即可
     - 从 Python subprocess 调 adb 无 MSYS 路径转换问题，不需要 Git Bash 的 `//` 前缀
 """
 

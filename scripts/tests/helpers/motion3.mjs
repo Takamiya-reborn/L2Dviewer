@@ -1,7 +1,4 @@
-/**
- * motion3 曲线采样与 interaction.json clip 取值（node 侧探针通用）。
- * motion3 线段布局：0 直线 / 1 贝塞尔 / 2 贝塞尔退化(阶梯) / 3 恒值。
- */
+/** motion3 曲线采样与 interaction.json clip 取值（node 侧探针通用）。motion3 线段布局：0 直线 / 1 贝塞尔 / 2 贝塞尔退化(阶梯) / 3 恒值。 */
 import fs from 'fs'
 
 export function bezier(a, b, c, d, s) {
@@ -72,10 +69,7 @@ export function sampleMotionAt(motion, t) {
   return out
 }
 
-/**
- * interaction clip 的节点尾值：state/carry 的 [start, end] 取 end。
- * carry 后合并（同名参数以 carry 为准，与机器尾态一致）。
- */
+/** interaction clip 的节点尾值：state/carry 的 [start, end] 取 end。carry 后合并（同名参数以 carry 为准，与机器尾态一致）。 */
 export function clipNodeEnd(interaction, clipName, { state = true, carry = true } = {}) {
   const clip = interaction.clips?.[clipName]
   const out = {}
@@ -95,10 +89,7 @@ export function clipCarryStart(interaction, clipName) {
   return out
 }
 
-/**
- * 游戏应然态参数对：节点尾值(state+carry) + 变体 motion 曲线@t。
- * viewer 正确路径在特殊待机期应落在这一参数态上。
- */
+/** 游戏应然态参数对：节点尾值(state+carry) + 变体 motion 曲线@t。viewer 正确路径在特殊待机期应落在这一参数态上。 */
 export function gamePosePairs(interaction, dir, clipName, motionClip, t = 0) {
   return {
     ...clipNodeEnd(interaction, clipName),

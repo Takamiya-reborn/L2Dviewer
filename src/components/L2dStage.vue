@@ -113,6 +113,8 @@ onMounted(async () => {
   watchDpr()
   view = app.view
   canvasHost.value.appendChild(view)
+  // 调试/探针句柄：外部脚本从 DOM 取舞台实例的唯一契约（消费方见 scripts/tests/probe/pixi_events.mjs）
+  canvasHost.value.__pixiApp = app
   // 指针交互走原生 DOM 事件（pixi v6 事件管线在本项目里不触发，见
   // scripts/tests/probe/pixi_events.mjs；原生路径只依赖 canvas 本身，语义
   // 与 Unity 端一致：按住跟随、松手判定）
@@ -150,6 +152,7 @@ onBeforeUnmount(() => {
   rippleCtl = null
   ctx.hintsCtl?.destroy()
   ctx.model?.destroy()
+  canvasHost.value.__pixiApp = null
   app?.destroy(true)
   ctx.app = null
   ctx.view = null

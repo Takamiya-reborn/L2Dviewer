@@ -1,6 +1,6 @@
 # Live2D 提取、解析与还原
 
-本文说明资源从手机端进入本项目后，如何被提取、解析、转换，并最终还原为浏览器可加载的 Cubism 4 模型和交互。游戏端目录、厂商技术与文件职责见 [azurlane.md](azurlane.md)。
+本文说明资源从手机端进入本项目后，如何被提取、解析、转换，并最终还原为浏览器可加载的 Cubism 模型和交互。游戏皮肤存在 Cubism 4 与 Cubism 5 两代 SDK，moc3 版本字节分别为 4 和 5，提取流程对两者通用。游戏端目录、厂商技术与文件职责见 [azurlane.md](azurlane.md)。
 
 ## 1. 获取输入文件
 
@@ -42,7 +42,7 @@ python scripts/extract.py <bundle_path> <out_dir>
 
 ### 3.1 模型和物理
 
-- 从 `CubismMoc._bytes` 取出 moc3，校验 `MOC3` 魔数后原样写出；
+- 从 `CubismMoc._bytes` 取出 moc3，校验 `MOC3` 魔数后原样写出，两代版本（v4/v5）不做转换；
 - 读取 Cubism 参数、部件、drawable、纹理和命中区域，建立 model3 的参数和 HitAreas 引用；
 - 将 ASTC Texture2D 解码为 PNG；
 - 将 physics3 TextAsset 的 JSON 原文写出；

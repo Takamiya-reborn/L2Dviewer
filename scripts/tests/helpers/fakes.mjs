@@ -5,7 +5,7 @@
 
 /**
  * node 无 localStorage，stub 一个内存版（DragMachine 的 saveValue/loadValue 依赖）。
- * 各测试文件统一用这份，不再各写内联副本。
+ * 各测试文件统一用这份。
  */
 export function stubLocalStorage() {
   const store = new Map()
@@ -19,8 +19,7 @@ export function stubLocalStorage() {
 /**
  * 假 Cubism coreModel。
  * @param params 参数表 { 参数id: { default, min, max, value? } }
- * @param opts.opacities drawable 不透明度表（给定时附加 getDrawableOpacity，
- *        InteractionRuntime.firstVisibleHit 的可见性过滤用）
+ * @param opts.opacities drawable 不透明度表（给定时附加 getDrawableOpacity，InteractionRuntime.firstVisibleHit 的可见性过滤用）
  */
 export function makeCoreModel(params = {}, { opacities = null } = {}) {
   const ids = Object.keys(params)

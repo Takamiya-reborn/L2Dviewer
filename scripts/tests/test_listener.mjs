@@ -1,11 +1,6 @@
-// 联动层冒烟测试（node scripts/tests/test_listener.mjs，仓库根目录跑）
-//
-// 用合成 ship_l2d 条目驱动 machine.onListenerEvent / orchestrator.notice，
-// 断言：kind1 相对累计 / kind2 绝对赋值 / range 钳制 / 连点下标复位 /
-// apply 区间换挡 + idle_enable 名单 / type3 变体号匹配 / PLAY 通知经
-// onActionApply 发射 / 真实点击链路的 PLAY 发射。DRAG_CLICK(2) 在原文是
-// 死路径（EVENT_ACTION_APPLY 成功回调实参恒 nil，CT:269/305），不测且
-// 断言它不再产生任何副作用。
+// 联动层冒烟测试（node scripts/tests/test_listener.mjs，仓库根目录跑）。
+// 用合成 ship_l2d 条目驱动 machine.onListenerEvent / orchestrator.notice，断言：kind1 相对累计 / kind2 绝对赋值 / range 钳制 / 连点下标复位 / apply 区间换挡 + idle_enable 名单 / type3 变体号匹配 / PLAY 通知经 onActionApply 发射 / 真实点击链路的 PLAY 发射。
+// DRAG_CLICK(2) 在原文是死路径（EVENT_ACTION_APPLY 成功回调实参恒 nil，CT:269/305），不测且断言它不再产生任何副作用。
 import { DragOrchestrator } from '../../src/utils/dragmachine/index.js'
 import { machinesById } from './helpers/machines.mjs'
 import { stubLocalStorage } from './helpers/fakes.mjs'

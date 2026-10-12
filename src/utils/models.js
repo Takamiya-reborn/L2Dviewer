@@ -1,10 +1,10 @@
 import { reactive } from 'vue'
 
 /**
- * 皮肤清单由 dev server 每次请求实时扫描仓库根目录 models/ 生成
- * （vite.config.js 的 serveModels 中间件），main.js 挂载前经 loadModels()
- * 拉取填充（reactive 数组，视图直接可用）。
+ * 皮肤清单（reactive 数组，视图直接可用）。
+ * 由 dev server 每次请求实时扫描仓库根目录 models/ 生成（vite.config.js 的 serveModels 中间件），main.js 挂载前经 loadModels() 拉取填充。
  * 新增皮肤：目录丢进 models/ 后刷新页面即生效，无需重启 dev。
+ *
  * id    -> 唯一标识（用于标签选中态）
  * name  -> 侧栏标签显示名
  * url   -> model3.json 路径（dev server 把 /models/* 映射到根目录 models/）
@@ -23,7 +23,7 @@ export async function loadModels() {
 }
 
 /**
- * 动作组显示名，对齐游戏内起居栏 L2D 界面的叫法；未收录的组在面板里
+ * 动作组显示名，对齐游戏内起居栏 L2D 界面的叫法；未收录的组在面板里直接显示组名。
  */
 export const TRIGGER_LABELS = {
   login: '登录',
@@ -45,8 +45,7 @@ export const TRIGGER_LABELS = {
 
 /**
  * 状态触发面板的展示顺序，与游戏内 L2D 界面一致：
- * 登录 → 主界面1~4 → 普通触摸/特殊触摸/摸头 → 任务提醒/任务完成 →
- * 邮件提醒 → 回港 → 誓约 → 委托完成。
+ * 登录 → 主界面1~4 → 普通触摸/特殊触摸/摸头 → 任务提醒/任务完成 → 邮件提醒 → 回港 → 誓约 → 委托完成。
  * 未收录的组排在末尾，保持 model3.json 里的相对顺序。
  */
 export const TRIGGER_ORDER = [

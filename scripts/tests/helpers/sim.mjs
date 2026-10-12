@@ -1,8 +1,6 @@
 /**
- * 全管线仿真 harness：真实 InteractionRuntime + DragOrchestrator + createActions
- * 代码 + 真实 moc3 参数表 + 真实 motion3 采样，在 node 里按 60fps 复现 viewer
- * 的帧循环（restoreLayer -> motion 曲线 -> applyLayer）。probe/simulate.mjs 与
- * 场景脚本共用，装配顺序与 mount.js 对齐。
+ * 全管线仿真 harness：真实 InteractionRuntime + DragOrchestrator + createActions 代码 + 真实 moc3 参数表 + 真实 motion3 采样，在 node 里按 60fps 复现 viewer 的帧循环（restoreLayer -> motion 曲线 -> applyLayer）。
+ * probe/simulate.mjs 与场景脚本共用，装配顺序与 mount.js 对齐。
  */
 import fs from 'fs'
 import path from 'path'
@@ -10,8 +8,7 @@ import { loadMocModel } from './cubism.mjs'
 import { loadMotion, sampleCurve } from './motion3.mjs'
 
 /**
- * @param {string} dir 皮肤目录（含 <name>.moc3 / .model3.json / .l2d.json /
- *        .interaction.json）
+ * @param {string} dir 皮肤目录（含 <name>.moc3 / .model3.json / .l2d.json / .interaction.json）
  * @param {object} opts
  * @param {string} [opts.name]            皮肤名，默认取目录名
  * @param {number} [opts.dt]              步长，默认 1/60
@@ -27,8 +24,7 @@ export async function createPipelineSim(dir, {
   debugHook = null,
   log = null,
 } = {}) {
-  // Core 先加载（pixi-live2d-display 在模块求值时检查 window.Live2DCubismCore），
-  // src 模块随后动态 import
+  // Core 先加载（pixi-live2d-display 在模块求值时检查 window.Live2DCubismCore），src 模块随后动态 import
   const { model } = await loadMocModel(dir)
   const { InteractionRuntime } = await import('../../../src/utils/interaction/runtime.js')
   const { DragOrchestrator } = await import('../../../src/utils/dragmachine/orchestrator.js')
@@ -74,19 +70,47 @@ export async function createPipelineSim(dir, {
 
   // ---- 动作播放仿真（pixi-live2d-display 库行为的最小还原）----
   let now = 0
-  // 机器内部（onDown/onUp/step 的 clickTriggerTime 等）用 performance.now()，
-  // 这里统一替换成仿真时钟，否则压缩时间轴下点击窗口永不命中
+  // 机器内部（onDown/onUp/step 的 clickTriggerTime 等）用 performance.now()，这里统一替换成仿真时钟，否则压缩时间轴下点击窗口永不命中
   globalThis.performance = { now: () => now * 1000 }
   const motionLog = []
   const emitLog = log ?? ((line) => motionLog.push(line))
 
   // ---- 装配（对应 mount.js）----
   const interaction = JSON.parse(fs.readFileSync(`${dir}/${name}.interaction.json`, 'utf8'))
-  // mount.js 注册顺序：resetParameters 先于 runtime 的 trackMotionStart
-  stubModel.internalModel.motionManager.on('motionStart', () => runtime?.resetParameters())
+  const fades = fs.existsSync(`${dir}/${name}.fades.json`)
+    ? JSON.parse(fs.readFileSync(`${dir}/${name}.fades.json`, 'utf8'))
+    : null
   const runtime = new InteractionRuntime(stubModel, interaction)
+  // 仿真版 attachMotions：边界从本地 motion3 同步装载（等价浏览器 fetch 预热），节点表外补账链路在 node 里真实生效
+  runtime.loadMotionBoundary = (clip) => {
+    runtime._boundaries ??= new Map()
+    let p = runtime._boundaries.get(clip)
+    if (!p) {
+      let out = null
+      try {
+        const m = loadMotion(dir, clip)
+        out = new Map()
+        for (const c of m.Curves) {
+          if (c.Target !== 'Parameter') continue
+          const segs = c.Segments
+          if (segs?.length >= 2) out.set(c.Id, segs[segs.length - 1])
+        }
+      } catch { /* 无此动作文件 */ }
+      p = Promise.resolve(out)
+      runtime._boundaries.set(clip, p)
+    }
+    return p
+  }
+  runtime.attachMotions(`file:///${dir}/${name}.model3.json`)
   const l2d = JSON.parse(fs.readFileSync(`${dir}/${name}.l2d.json`, 'utf8'))
-  const ctx = { model: stubModel, orch: null, runtime, currentMotion: { value: '' }, lastGesture: 'tap' }
+  const ctx = { model: stubModel, orch: null, runtime, currentMotion: { value: '' }, lastGesture: 'tap', fades }
+  // mount.js 注册顺序：beginSmoothReset（按起播 clip 的转场时长开窗）先于 runtime 构造时挂的 trackMotionStart——节点读取时机与其一致
+  stubModel.internalModel.motionManager.on('motionStart', (group, index) => {
+    const clip = runtime?.clipOf(group, index)
+    runtime?.beginSmoothReset(
+      clip ? (fades?.transitions?.[clip] ?? fades?.default ?? undefined) : undefined,
+    )
+  })
 
   function startMotion(group, index) {
     const clip = (settings.motions[group][index].File ?? '').split('/').pop().replace(/\.motion3\.json$/, '')
@@ -123,7 +147,8 @@ export async function createPipelineSim(dir, {
     now += dt
     orch.step(dt)
     if (active) {
-      // 库内每帧：beforeMotionUpdate(restoreLayer) -> 曲线 -> afterMotionUpdate(applyLayer)
+      // 库内每帧：beforeMotionUpdate(applySmoothReset + restoreLayer) -> 曲线 -> afterMotionUpdate(applyLayer)——与 mount.js 注册序一致
+      runtime.applySmoothReset()
       orch.restoreLayer(core)
       const m = loadMotion(dir, active.clip)
       const t = Math.min(active.t, active.duration)

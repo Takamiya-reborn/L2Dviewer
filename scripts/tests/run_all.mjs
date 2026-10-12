@@ -1,6 +1,5 @@
 // 测试入口：串行跑 scripts/tests 下全部 test_*.mjs，按退出码汇总。
-// 用法：node scripts/tests/run_all.mjs [名字子串...] [--fail-fast|-f]
-// （从仓库根目录跑，各测试按相对路径读 models/、public/libs）。
+// 用法：node scripts/tests/run_all.mjs [名字子串...] [--fail-fast|-f]（从仓库根目录跑，各测试按相对路径读 models/、public/libs）。
 // 各测试的 SUMMARY pass=N fail=M 行被解析进汇总；没打的显示 —。
 import fs from 'fs'
 import path from 'path'
@@ -32,8 +31,7 @@ for (const f of tests) {
   const r = spawnSync(process.execPath, [path.join(here, f)], {
     stdio: ['ignore', 'pipe', 'inherit'],
   })
-  // stdout 捕获后原样回显（spawnSync 本就阻塞，观感与 inherit 相同），
-  // 顺带解析末尾的 SUMMARY 行进汇总
+  // stdout 捕获后原样回显（spawnSync 本就阻塞，行为与 inherit 相同），顺带解析末尾的 SUMMARY 行进汇总
   const out = r.stdout ? r.stdout.toString() : ''
   process.stdout.write(out)
   const m = out.match(/SUMMARY pass=(\d+) fail=(\d+)/)

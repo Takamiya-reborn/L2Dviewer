@@ -1,10 +1,11 @@
 /**
  * 模型挂载编排：销毁旧模型 -> Live2DModel.from -> 依序装配氛围层、交互
  * 状态机、拖拽参数机 -> 初始 idle -> 取景适配 -> 上报动作组。写回
- * ctx.model / ctx.runtime / ctx.orch / ctx.l2dOffset / ctx.fades /
- * ctx.hasOrch。
+ * ctx.model / ctx.modelUrl / ctx.runtime / ctx.orch / ctx.l2dOffset /
+ * ctx.fades / ctx.hasOrch。
  */
 import { Live2DModel } from 'pixi-live2d-display/cubism4'
+import { Ticker } from 'pixi.js'
 import { installColorPatch } from './colorPatches'
 import { installPalette } from './palette'
 import { loadAmbient } from '../utils/ambient'
@@ -27,13 +28,13 @@ export async function mountModel(ctx, url) {
 }
 
 async function mountModelInner(ctx, url) {
-  // 挂载时序令牌：挂载内有多个 await（Live2DModel.from 要数秒），快速连续
-  // 切皮肤时两个挂载交错——先启动的后完成，会把 ctx.model/runtime/orch 覆盖
-  // 成旧实例、新旧两只模型同时滞留舞台（后加者在上面），交互/HUD/复位全绑
-  // 到看不见的那只（实测即"切过皮肤后状态卡死、重置交互无效"）。每次挂载
-  // 自增，任何 await 醒来发现令牌过期就丢弃自己的模型直接退出
+  // 挂载时序令牌：挂载内有多个 await（Live2DModel.from 要数秒），快速连续切皮肤时两个挂载交错——先启动的后完成，会把 ctx.model/runtime/orch 覆盖成旧实例、新旧两只模型同时滞留舞台（后加者在上面），交互/HUD/复位全绑到看不见的那只
+  // 每次挂载自增，任何 await 醒来发现令牌过期就丢弃自己的模型直接退出
   const seq = (ctx._mountSeq = (ctx._mountSeq ?? 0) + 1)
   const stale = () => seq !== ctx._mountSeq
+  // 记下当前皮肤地址并提供重挂载钩子（"重置交互"主路径：同一地址重走本流程，见 actions.resetInteraction）；经 ctx 注入而非 actions.js 静态引回本模块——headless sim 直接以 Node 加载 actions.js，不走浏览器侧资源链
+  ctx.modelUrl = url
+  ctx.remount = () => mountModel(ctx, url)
   const app = ctx.app
   // per-drawable multiply/screen 渲染补丁（调色板换色的渲染侧，装一次全局生效）
   installColorPatch()
@@ -44,8 +45,7 @@ async function mountModelInner(ctx, url) {
     ctx.model.destroy()
     ctx.model = null
   }
-  // 新模型先按"无状态机"处理（interaction.json 就绪后运行时才接管；
-  // 首支动作起播若早于数据就绪，模型本来就是干净的默认参数，无需复位）
+  // 新模型先按"无状态机"处理（interaction.json 就绪后运行时才接管；首支动作起播若早于数据就绪，模型本来就是干净的默认参数，无需复位）
   ctx.runtime = null
   ctx.orch = null
   ctx.l2dOffset = null
@@ -59,10 +59,8 @@ async function mountModelInner(ctx, url) {
     return
   }
   ctx.model = model
-  // 逐 clip 转场时长表（<id>.fades.json，extract.py 的 animator_fades 从
-  // bundle 的 AnimatorController 提取）：motionPatches.createMotion 按它设置动作渐入
-  // 时长，动作起播的复位缓动窗口也取同一值——两处严格同源。缺失时全旁路
-  // （渐变走 config 兜底 300ms、复位走 RESET_FADE 兜底）
+  // 逐 clip 转场时长表（<id>.fades.json，extract.py 的 animator_fades 从 bundle 的 AnimatorController 提取）：motionPatches.createMotion 按它设置动作渐入时长，动作起播的复位缓动窗口也取同一值——两处严格同源
+  // 缺失时全旁路（渐变走 config 兜底 300ms、复位走 RESET_FADE 兜底）
   ctx.fades = await fetch(url.replace(/model3\.json$/, 'fades.json'))
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null)
@@ -70,19 +68,15 @@ async function mountModelInner(ctx, url) {
     model.destroy()
     return
   }
-  // 动作起播的参数复位改走平滑路径（见 runtime.beginSmoothReset）：瞬跳会
-  // 毁掉动作交叉渐变的混合起点。落笔钩子在 runtime 创建后挂（下方
-  // beforeMotionUpdate），这里只登记缓动窗口；窗口取起播 clip 的转场时长
-  // （trackMotionStart 尚未结算挂起动作，节点读取时机不变）
+  // 动作起播的参数复位改走平滑路径（见 runtime.beginSmoothReset）：瞬跳会毁掉动作交叉渐变的混合起点
+  // 落笔钩子在 runtime 创建后挂（下方 beforeMotionUpdate），这里只登记缓动窗口；窗口取起播 clip 的转场时长（trackMotionStart 尚未结算挂起动作，节点读取时机不变）
   model.internalModel.motionManager.on('motionStart', (group, index) => {
     const clip = ctx.runtime?.clipOf(group, index)
     ctx.runtime?.beginSmoothReset(
       clip ? (ctx.fades?.transitions?.[clip] ?? ctx.fades?.default ?? undefined) : undefined,
     )
   })
-  // 常驻氛围层：effect 组（垂发/扶手布的微风摆动）在游戏内永远循环叠加，
-  // 这里挂在 afterMotionUpdate（主动作求值后、saveParameters 前）直写参数，
-  // 物理与姿态系统不触碰这些参数，故不会与本层互相覆盖；
+  // 常驻氛围层：effect 组（垂发/扶手布的微风摆动）在游戏内永远循环叠加，这里挂在 afterMotionUpdate（主动作求值后、saveParameters 前）直写参数，物理与姿态系统不触碰这些参数，故不会与本层互相覆盖
   // effect 缺失/加载失败只跳过本层，不应中断整个挂载
   try {
     const ambient = await loadAmbient(url, model.internalModel.settings)
@@ -98,22 +92,26 @@ async function mountModelInner(ctx, url) {
     console.warn('[l2d] 常驻氛围层加载失败,已跳过', err)
   }
   app.stage.addChild(model)
-  // 交互状态机：数据与模型同目录（<id>.interaction.json，本项目扩展产物），
-  // 加载失败时运行时全旁路（参数全量复位、点击不做门控），退化为旧行为
+  // 交互状态机：数据与模型同目录（<id>.interaction.json，本项目扩展产物），加载失败时运行时全旁路（参数全量复位、点击不做门控），退化为旧行为
   const interaction = await loadInteraction(url)
   if (stale()) {
     model.destroy()
     return
   }
   ctx.runtime = new InteractionRuntime(model, interaction)
+  // 动作边界预热：节点跟随每支动作实际驱动的状态/摆位参数（表外回零边补账）
+  ctx.runtime.attachMotions(url)
+  // 库的 idle 自启挂在 Ticker.shared（Live2DModel.from 的 init 即注册共享 ticker），首个 tick 早于本行——from 之后这里已串行 await 了氛围层/交互数据，auto idle 的 motionStart 已错过且无人监听；循环 idle 永不 motionFinish、重播同支又被 MotionState.reserve 拒绝，此后再无 motionStart
+  // 向 state 的当前动作补一次起播结算（此刻 _clipFiles 已注入，表外边界补全一次到位）；reserve 已留位未 start 的场合（currentGroup 仍空）不补——随后的 motionStart 会落在已注册的监听器上
+  const mountState = model.internalModel.motionManager.state
+  if (mountState?.currentGroup !== undefined) {
+    ctx.runtime.trackMotionStart(mountState.currentGroup, mountState.currentIndex)
+  }
   // 调色板控制层（色轴参数 skin 没有时整层旁路）
   installPalette(ctx, model)
-  // 平滑复位每帧落笔：先于机器叠加层的 restoreLayer 注册（同事件按注册序
-  // 触发）——机器加/乘参数的底值还原保持原语义，不被缓动写入覆盖
+  // 平滑复位每帧落笔：先于机器叠加层的 restoreLayer 注册（同事件按注册序触发）——机器加/乘参数的底值还原保持原语义，不被缓动写入覆盖
   model.internalModel.on('beforeMotionUpdate', () => ctx.runtime.applySmoothReset())
-  // 拖拽参数机：数据与模型同目录（<id>.l2d.json，extract.py 烘焙产物）；
-  // 播放回调解析 clip 名 -> 动作组（白名单里存的是 clip 名，如 touch_idle1、
-  // idle1），机器分区命中后由编排器接管路由
+  // 拖拽参数机：数据与模型同目录（<id>.l2d.json，extract.py 烘焙产物）；播放回调解析 clip 名 -> 动作组（白名单里存的是 clip 名，如 touch_idle1、idle1），机器分区命中后由编排器接管路由
   const l2dConfig = await loadL2dConfig(url)
   if (stale()) {
     model.destroy()
@@ -125,9 +123,8 @@ async function mountModelInner(ctx, url) {
     ctx.orch = orch
     // 触发链关键步（拒按/点击判定/豁免/播放/名单）进控制台，供浏览器自测读链路
     orch.debugHook = (s) => console.log('[l2d:tap]', s)
-    // 刷新即重置（游戏 ClearLive2dSave 语义：拖拽值回 start_value、idle 归零、
-    // 白名单清空、存档清除）。偏离游戏的持久化恢复语义——查看器定位是交叉
-    // 测试工具，每次加载从干净态起步，避免上轮测试的档位/状态残留串场
+    // 刷新即重置（游戏 ClearLive2dSave 语义：拖拽值回 start_value、idle 归零、白名单清空、存档清除）
+    // 偏离游戏的持久化恢复语义——查看器定位是交叉测试工具，每次加载从干净态起步，避免上轮测试的档位/状态残留串场
     orch.resetAll()
     ctx.runtime.checkEnable = (name) => orch.checkEnablePlay(name)
     const manager = model.internalModel.motionManager
@@ -138,21 +135,44 @@ async function mountModelInner(ctx, url) {
     const core = model.internalModel.coreModel
     model.internalModel.on('beforeMotionUpdate', () => orch.restoreLayer(core))
     model.internalModel.on('afterMotionUpdate', () => orch.applyLayer(core))
-    // 挂载即落基础 idle（变体 0）：库的 idle 自启虽经 startRandomMotion 补丁按
-    // 当前变体解析，但首帧前 FORCE 抢跑消掉竞态，明确从干净态起步——不然随机
-    // 命中摆位变体（如 wuzang_3 组内下标 0 是 idle4）会把摆位判定框一起摆进来
-    ctx.actions.playLuaAction(orch.idleClipFor(0))
+    // 挂载即落基础 idle（变体 0），从干净态起步——随机命中摆位变体会把摆位判定框一起摆进来
+    // 自启已在播目标 clip 时跳过（重播同支会被 reserve 拒绝），只补面板读数；仅在自启选支与目标变体不一致（如引擎回落退化到组内下标 0）时才 FORCE 纠正
+    const wantIdle = orch.idleClipFor(0)
+    const playingClip =
+      manager.state?.currentGroup !== undefined
+        ? ctx.runtime.clipOf(manager.state.currentGroup, manager.state.currentIndex)
+        : null
+    if (playingClip === wantIdle) ctx.currentMotion.value = manager.state.currentGroup
+    else ctx.actions.playLuaAction(wantIdle)
     ctx.hasOrch.value = true
   }
   ctx.camera.fitModel()
-  // drawable 顶点在模型首次 update 时才由核心算出，上面的适配只能拿到陈旧值；
-  // 两帧后（顶点就绪、idle 已应用）按真实场景重新适配一次
+  // drawable 顶点在模型首次 update 时才由核心算出，上面的适配只能拿到陈旧值；两帧后（顶点就绪、idle 已应用）按真实场景重新适配一次
   requestAnimationFrame(() => requestAnimationFrame(() => ctx.camera.fitModel()))
   ctx.status.value = ''
 
+  // 临时诊断：挂载后 60 帧内观察更新链。探针挂在 app.ticker（NORMAL 优先级、晚于既有回调），读数判读：
+  //   - 探针静默 -> app.ticker 某个回调每帧抛异常，整帧（含渲染）被杀
+  //   - 打印但 model.deltaTime≈0 -> Ticker.shared 没在给模型送 tick（autoUpdate 注册/摘除链断），模型停在首帧姿态
+  //   - 打印且 deltaTime≈16.7 -> 更新链正常，问题在更深处（motionManager 等）
+  let probeFrames = 0
+  const probe = () => {
+    if (++probeFrames > 60) {
+      app.ticker.remove(probe)
+      return
+    }
+    if (probeFrames % 30 === 0) {
+      console.log(
+        `[l2d] 帧探针 ${probeFrames}: deltaTime=${model.deltaTime.toFixed(1)}` +
+          ` Ticker.shared=${Ticker.shared.count}个监听(started=${Ticker.shared.started})` +
+          ` autoUpdate=${model.autoUpdate}`,
+      )
+    }
+  }
+  app.ticker.add(probe)
+
   // 点击/拖拽 -> 手动做命中检测（autoInteract 已关闭），命中区域 -> 播放对应动作
-  // （model.on('hit') 仅作后备：常规路径在 onPointerUp 里用 meshHitTest 精确
-  // 命中后直呼 handleHitAreas，绕开 model.tap 内部的包围盒 hitTest）
+  // （model.on('hit') 仅作后备：常规路径在 onPointerUp 里用 meshHitTest 精确命中后直呼 handleHitAreas，绕开 model.tap 内部的包围盒 hitTest）
   model.on('hit', ctx.actions.handleHitAreas)
 
   // 上报动作组清单，供状态触发面板展示

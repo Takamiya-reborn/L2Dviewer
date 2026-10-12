@@ -1,11 +1,7 @@
-/**
- * 常驻氛围层：effect 组是游戏内永远循环播放的叠加动画（垂发、扶手布等微风
- * 摆动），只驱动其他动作与物理都不触碰的参数，因此可在任意动作之上直写参数。
- * pixi-live2d-display 的动作队列一次只能播一支动作，无法天然叠加两支，
- * 这里按 motion3.json 曲线逐帧采样后直写参数，与游戏内观感一致。
- * 注意：若某套皮肤的其他动作也驱动这些参数，会与本层互相覆盖——目前各套
- * 皮肤的 effect 参数均为独占参数，不冲突。
- */
+/** 常驻氛围层：effect 组是游戏内永远循环播放的叠加动画（垂发、扶手布等微风摆动），只驱动其他动作与物理都不触碰的参数，因此可在任意动作之上直写参数。 */
+
+// pixi-live2d-display 的动作队列一次只能播一支动作，无法天然叠加两支，这里按 motion3.json 曲线逐帧采样后直写参数，与游戏内表现一致。
+// 注意：若某套皮肤的其他动作也驱动这些参数，会与本层互相覆盖——目前各套皮肤的 effect 参数均为独占参数，不冲突。
 
 /** 三次贝塞尔 B(s)，用于 motion3 贝塞尔段求值 */
 function bezier(a, b, c, d, s) {
@@ -55,8 +51,7 @@ function sampleCurve(segments, t) {
       const t1 = segments[i + 1]
       const v1 = segments[i + 2]
       if (type === 2 ? t <= t1 : type === 3 ? t < t1 : t <= t1) {
-        // 线性段按段内比例插值（现有三套皮肤的 effect 曲线只用贝塞尔/阶跃段，
-        // 此分支暂无实况覆盖）；阶跃保持旧值；反阶跃取段末值
+        // 线性段按段内比例插值（现有三套皮肤的 effect 曲线只用贝塞尔/阶跃段，此分支暂无数据覆盖）；阶跃保持旧值；反阶跃取段末值
         if (type === 0) return t1 === time ? v1 : value + ((v1 - value) * (t - time)) / (t1 - time)
         return type === 3 ? v1 : value
       }
@@ -84,13 +79,7 @@ export async function loadAmbient(modelUrl, settings) {
   // 参数绑定（惰性，首次 apply 时解析）：下标 + moc 的 [min, max] 范围
   let bindings = null
   return {
-    /** seconds 取任意单调时钟；取模后每帧写入，效果与游戏内连播一致。
-     *  写入前按 moc 的 [min, max] 收敛：游戏端 Unity/Cubism Framework 会把
-     *  参数写入钳制到参数范围，核心层直写不会——部分皮肤的 effect 曲线超程
-     *  （shengluyisi_5 的 Param90/92 曲线达 14.7，参数范围 [0,2]），超程值
-     *  放大形变，且幅度随加载时刻的采样相位（performance.now 取模）变化，
-     *  把 fitModel 的场景测量甩出逐次不同的偏差——自由摆位皮肤表现为
-     *  "每次刷新位置/大小随机"。 */
+    /** seconds 取任意单调时钟；按 Meta.Duration 取模后每帧写入，效果与游戏内连播一致。 */
     apply(coreModel, seconds) {
       if (!bindings) {
         bindings = curves
@@ -109,6 +98,8 @@ export async function loadAmbient(modelUrl, settings) {
       const t = seconds % duration
       for (const b of bindings) {
         let value = sampleCurve(b.segments, t)
+        // 对齐游戏端 Framework：参数写入钳制到 moc 的 [min, max] 范围（核心层直写不会自动钳制）
+        // 部分皮肤的 effect 曲线超程（shengluyisi_5 的 Param90/92 曲线达 14.7，参数范围 [0,2]），超程值会放大形变
         if (value < b.min) value = b.min
         else if (value > b.max) value = b.max
         coreModel.setParameterValueByIndex(b.index, value)

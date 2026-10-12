@@ -11,9 +11,7 @@
     <id>.interaction.json   （clips 交互状态数据 + animator 动作编号路由表）
     <id>.fades.json         Animator 转场时长表（逐 clip 交叉渐变秒数）
     <id>.defaults.json      参数默认值/min/max（解析自 moc3 二进制，见下）
-    <id>.inventory.json     bundle 全量参考：GameObject 表、全部组件 typetree
-                            （CubismMoc._bytes 除外——.moc3 文件本身已落盘）、
-                            AnimationClip 事件与绑定
+    <id>.inventory.json     bundle 全量参考：GameObject 表、全部组件 typetree（CubismMoc._bytes 除外——.moc3 文件本身已落盘）、AnimationClip 事件与绑定
     textures/texture_XX.png
     motions/<clip_name>.motion3.json
 
@@ -22,10 +20,7 @@
     - 贴图 Texture2D (ASTC 由 UnityPy 转码) -> PNG
     - TextAsset *.physics3 为 JSON 原文（非 UTF-8 的 TextAsset 落 .bin 原始字节）
     - Unity AnimationClip (streamed+constant 曲线, CRC32 哈希绑定) -> motion3.json
-    - moc3 默认值：Cubism 4 (moc3 版本字节=4) 头部 0x40 起是节偏移表
-      (递增 u32)；表[51]=参数 max、表[52]=min、表[53]=defaults，各为
-      n_f32 数组、按 CubismParameter._unmanagedIndex 对位（字符串槽区
-      顺序与此无关）。min<=default<=max 全程成立可作校验。
+    - moc3 默认值：Cubism 4/5 (moc3 版本字节=4/5，节表布局一致) 头部 0x40 起是节偏移表 (递增 u32)；表[51]=参数 max、表[52]=min、表[53]=defaults，各为 n_f32 数组、按 CubismParameter._unmanagedIndex 对位（字符串槽区顺序与此无关）。min<=default<=max 全程成立可作校验。
 """
 
 import argparse
@@ -38,8 +33,7 @@ from pathlib import Path
 
 import UnityPy
 
-# 固定路径约定：bundle 由 pull_bundles.py 拉到 .tmp/bundles/<skin_id>，
-# 产物按 models/<角色>/<skin_id>/ 归档（scan_models.mjs 按此路径生成清单）
+# 固定路径约定：bundle 由 pull_bundles.py 拉到 .tmp/bundles/<skin_id>，产物按 models/<角色>/<skin_id>/ 归档（scan_models.mjs 按此路径生成清单）
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_DIR = ROOT / ".tmp" / "bundles"
 MODEL_ROOT = ROOT / "models"
@@ -142,7 +136,7 @@ def crc32(s: str) -> int:
     return zlib.crc32(s.encode("utf-8")) & 0xFFFFFFFF
 
 
-# 曲线 attribute 也是 CRC32 哈希（fulici_2 实测仅两种）：
+# 曲线 attribute 也是 CRC32 哈希，本游戏只用两种：
 #   Value   -> 参数曲线（Target: Parameter）
 #   Opacity -> 部件不透明度曲线（Target: PartOpacity）
 # 其余 attribute 视为未知，跳过并告警（原始绑定保留在 inventory.json）
@@ -151,10 +145,7 @@ CRC_OPACITY = zlib.crc32(b"Opacity") & 0xFFFFFFFF
 
 
 def build_hierarchy(env):
-    """返回 {transform_path_id: (go_name, path_from_root, go_path_id)} 与根列表。
-
-    path_from_root 含根名，形如 root/Parameters/ParamAngleX。
-    """
+    """返回 {transform_path_id: (go_name, path_from_root, go_path_id)} 与根列表；path_from_root 含根名，形如 root/Parameters/ParamAngleX。"""
     go_by_pid = {}
     tr_by_pid = {}
     for obj in env.objects:
@@ -216,13 +207,10 @@ def resolve_hash_bindings(env, param_cls_names=("CubismParameter",)):
 
 def moc3_param_tables(moc3_bytes: bytes, n_params: int):
     """从 moc3 二进制解析参数 (max, min, default) 三张表。
-
-    Cubism 4 (版本字节=4) 头部 0x40 起为节偏移表（递增 u32，直到不再递增），
-    表[51]=max、表[52]=min、表[53]=defaults，各 n_f32，按
-    CubismParameter._unmanagedIndex 对位。校验 min<=default<=max，
-    不满足（moc 版本不同/对位错）则返回 None。
+    Cubism 4/5（版本字节=4/5，两者节表布局一致，表项数 117/129）头部 0x40 起为节偏移表（递增 u32，直到不再递增），表[51]=max、表[52]=min、表[53]=defaults，各 n_f32，按 CubismParameter._unmanagedIndex 对位。
+    校验 min<=default<=max，不满足（moc 版本不同/对位错）则返回 None。
     """
-    if len(moc3_bytes) < 0x240 or moc3_bytes[4] != 4:
+    if len(moc3_bytes) < 0x240 or moc3_bytes[4] not in (4, 5):
         return None
     tbl, prev, off = [], 0, 0x40
     while off < 0x400:
@@ -268,7 +256,13 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
     for i, b in enumerate(bindings):
         rel = path_hash.get(b.path)
         if rel is None:
-            unresolved += 1
+            # 根对象(path=0)的 CubismRenderController.Opacity 绑定：游戏用整模型透明度做动作内淡入淡出/防渐变残留钉 1。
+            # motion3 官方规范有模型级曲线槽位（Target="Model"，Id 固定 "Opacity"），原值照录不丢。
+            # pixi-live2d-display 内置 Framework 解析不报错但 apply 时忽略 Model/Opacity（只认 EyeBlink/LipSync），恒 1 值无渲染影响。
+            if b.path == 0 and b.attribute == CRC_OPACITY:
+                curve_meta[i] = ("Opacity", "Model")
+            else:
+                unresolved += 1
             continue
         name = rel.split("/")[-1]
         if b.attribute == CRC_VALUE:
@@ -290,11 +284,8 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
                     (t, key.value, key.outSlope, key.inSlope)
                 )
 
-    # constant: 本 Unity 版本的 m_IndexArray 恒为 -1（死字段），常量段按绑定
-    # 顺序隐式对位——constant.data 第 k 项 = 第 k 个无 streamed 关键帧的绑定。
-    # 实测全部 clip 满足 len(constant) == 绑定数 - streamed 绑定数（见
-    # docs/azurlane.md 常量段一节）。被压成常量的曲线同样是被动画的：值为 0
-    # 但模型默认值非 0 的参数（如氛围球 0.7）必须钉到 0，不能漏。
+    # constant: 本 Unity 版本的 m_IndexArray 恒为 -1（死字段），常量段按绑定顺序隐式对位——constant.data 第 k 项 = 第 k 个无 streamed 关键帧的绑定，即 len(constant) == 绑定数 - streamed 绑定数（见 docs/azurlane.md 常量段一节）。
+    # 被压成常量的曲线同样是被动画的：值为 0 但模型默认值非 0 的参数（如氛围球 0.7）必须钉到 0，不能漏。
     covered = set(streamed_keys)
     dense_n = (
         dense.m_CurveCount if dense.m_CurveCount > 0 and dense.m_SampleArray else 0
@@ -328,9 +319,7 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
             dense_keys[i] = [(t, v, 0.0, 0.0) for (t, v) in pts]
 
     # 常量曲线的持续范围：Unity 里常量在整支动作内生效（m_StopTime 封顶）。
-    # 播放器（Cubism 官方解析）不接受零段曲线——读基点后会对 undefined 段类型
-    # 空转一圈并多耗一个段配额，totalSegmentCount 超出 Meta 分配即解析崩溃
-    # （表现：动作全部无法播放）。故单关键帧曲线一律表达为 stepped 段铺满时长。
+    # Cubism 官方解析不接受零段曲线——读基点后会对 undefined 段类型空转一圈并多耗一个段配额，totalSegmentCount 超出 Meta 分配即解析崩溃，故单关键帧曲线一律表达为 stepped 段铺满时长。
     stop_time = getattr(mc, "m_StopTime", 0.0) or 0.0
     key_max_t = max(
         (
@@ -351,8 +340,7 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
         keys.sort(key=lambda k: k[0])
         segs = [keys[0][0], keys[0][1]]
         if len(keys) == 1:
-            # 单关键帧 = 常量：stepped 段铺满动作时长（clip_dur=0 的极端场合
-            # 才退化为裸单点）
+            # 单关键帧 = 常量：stepped 段铺满动作时长（clip_dur=0 的极端场合才退化为裸单点）
             if clip_dur > keys[0][0]:
                 segs += [2, clip_dur, keys[0][1]]
         for k0, k1 in zip(keys, keys[1:]):
@@ -416,13 +404,7 @@ def motion3_json(curves, duration, loop):
 
 def clip_events(clip) -> list:
     """AnimationEvent 列表 -> [{time, function, int}]。
-
-    游戏交互状态机的载体之一：OnAnimEvent(0) 在动作开头触发（配音/语音钩子），
-    OnFinishAnim(N) 在动作结尾上报状态编号（N 与动作一一对应：2=main_1、
-    3=main_2、4=main_3、5=complete、6=login、7=home、8=mail、9=mission、
-    10=mission_complete、11=wedding、12=touch_head、13=touch_body、
-    14=touch_special；0=touch_idle*/touch_drag 类反应）。游戏控制器据此决定
-    动作结束后回到哪个状态。
+    游戏交互状态机的载体之一：OnAnimEvent(0) 在动作开头触发（配音/语音钩子），OnFinishAnim(N) 在动作结尾上报状态编号（N 与动作一一对应：2=main_1、3=main_2、4=main_3、5=complete、6=login、7=home、8=mail、9=mission、10=mission_complete、11=wedding、12=touch_head、13=touch_body、14=touch_special；0=touch_idle*/touch_drag 类反应），游戏控制器据此决定动作结束后回到哪个状态。
     """
     return [
         {"time": round(e.time, 3), "function": e.functionName, "int": e.intParameter}
@@ -431,12 +413,9 @@ def clip_events(clip) -> list:
 
 
 def _default_switch_like(rng) -> bool:
-    """moc 默认值贴 0/±1 的参数才可能是开关。默认值落在量程中间（如氛围球
-    MB_fenweiqiu* 的 0.7）说明参数是连续量旋钮：某支动作的边界值恰好等于 1
-    （常值 1 的曲线更会整条过 _all_switch_like）不改变其性质，误判成开关会
-    造出"自己要求自己产出"的死锁门控——touch_special 以 fenweiqiu4/5=1 起
-    播且自己是唯一 end=1 的动作，节点从 moc 默认 0.7 起步永无对上 1 的机会，
-    分支从 t0 起被 canPlay 拦死。rng 为 None（量程缺失）时退回旧行为。"""
+    """moc 默认值贴 0/±1 的参数才可能是开关。
+    默认值落在量程中间（如氛围球 MB_fenweiqiu* 的 0.7）说明参数是连续量旋钮：某支动作的边界值恰好等于 1（常值 1 的曲线更会整条过 _all_switch_like）不改变其性质，按开关处理会造出"自己要求自己产出"的死锁门控——以默认值起步的节点永无对上起播值 1 的机会，分支从 t0 起被 canPlay 拦死。
+    rng 为 None（量程缺失）时退回旧行为。"""
     if rng is None:
         return True
     d = rng.get("default")
@@ -455,14 +434,9 @@ def _all_switch_like(values: list) -> bool:
 
 
 def _boundary_switch_like(values: list, rng) -> bool:
-    """带弹性过冲的开关曲线：首末采样贴 0/±1，全程不越出 moc 量程
-    （容差 0.05），且量程宽度 ≤1.25。
-
-    典型如 uicaidan（菜单 UI 开关，量程 [0,1.1]）：摊开动画带 0.32/1.1
-    的过冲中间值，_all_switch_like 会整条落选，导致该开关不进状态表——
-    运行时复位会把摊开的菜单抹掉、分支门控也失去这项前置状态。
-    量程宽度是反向保险：姿态移动件（ParamAngleZ ±30、jianX ±10 等）
-    即便首末值恰好贴 0/±1 也不得入选，否则会被拿去做点击门控。
+    """带弹性过冲的开关曲线：首末采样贴 0/±1，全程不越出 moc 量程（容差 0.05），且量程宽度 ≤1.25。
+    典型如 uicaidan（菜单 UI 开关，量程 [0,1.1]）：摊开动画带 0.32/1.1 的过冲中间值，_all_switch_like 会整条落选，此判据让这类开关仍进状态表（否则运行时复位与分支门控都会失去这项状态）。
+    量程宽度是反向保险：姿态移动件（ParamAngleZ ±30、jianX ±10 等）即便首末值恰好贴 0/±1 也不得入选，否则会被拿去做点击门控。
     """
     if rng is None or rng["max"] - rng["min"] > 1.25:
         return False
@@ -475,17 +449,9 @@ def _boundary_switch_like(values: list, rng) -> bool:
 
 def clip_boundary_state(clip, path_hash, ranges=None) -> tuple[dict, dict]:
     """每支动作的首/末参数值，供还原跨动作交互状态。返回 (state, carry)：
-
-    - state（开关型）：游戏不在动作间复位参数，touch_idle1 结束时 caidan=1
-      （菜单摊开）、dianjikyc=1（菜单可点），该状态跨动作持续；
-      touch_idle2/4/7 以 caidan=1 起播（菜单摊开时的分支动作）。由此可推出
-      "打开器/分支"的点击门控协议。
-    - carry（连续型）：菜单摊开同时位移整个场景（touch_idle1 结束时
-      All_X=2.34，idle1 变体不复写该参数），位移量是姿态状态的一部分，
-      复位会当场回正。凡首/末值非零的连续参数一律落盘，运行时按"结束值
-      即当前状态"跨动作保留；收尾分支把它带回 0 时同样落盘，节点随之清零。
-      ranges 是 moc3 参数量程（pid -> min/max），供 _boundary_switch_like
-      识别带过冲的开关曲线；缺省时只走严格判据。
+    state（开关型）：游戏不在动作间复位参数，touch_idle1 结束时 caidan=1（菜单摊开）、dianjikyc=1（菜单可点），该状态跨动作持续；touch_idle2/4/7 以 caidan=1 起播（菜单摊开时的分支动作），由此可推出"打开器/分支"的点击门控协议。
+    carry（连续型）：菜单摊开同时位移整个场景（touch_idle1 结束时 All_X=2.34，idle1 变体不复写该参数），位移量是姿态状态的一部分，复位会当场回正；凡首/末值非零的连续参数一律落盘，运行时按"结束值即当前状态"跨动作保留，收尾分支把它带回 0 时同样落盘，节点随之清零。
+    ranges 是 moc3 参数量程（pid -> min/max），供 _boundary_switch_like 识别带过冲的开关曲线；缺省时只走严格判据。
     """
     mc = clip.m_MuscleClip
     cd = mc.m_Clip.data
@@ -499,8 +465,7 @@ def clip_boundary_state(clip, path_hash, ranges=None) -> tuple[dict, dict]:
                 continue
             for key in frame.key_list:
                 series.setdefault(key.index, []).append((frame.time, key.value))
-    # constant 段与 convert_clip 同一解码：m_IndexArray 死字段，按绑定顺序
-    # 隐式对位（第 k 项 = 第 k 个无 streamed/dense 数据的绑定）
+    # constant 段与 convert_clip 同一解码：m_IndexArray 死字段，按绑定顺序隐式对位（第 k 项 = 第 k 个无 streamed/dense 数据的绑定）
     constant = cd.m_ConstantClip.data
     covered = set(series)
     dense = cd.m_DenseClip
@@ -538,12 +503,10 @@ def clip_boundary_state(clip, path_hash, ranges=None) -> tuple[dict, dict]:
         if _default_switch_like(rng) and (
             _all_switch_like(values) or _boundary_switch_like(values, rng)
         ):
-            if pts[0][1] == 0.0 and pts[-1][1] == 0.0:
-                continue  # 首末均为 0，不含边界信息
+            # 首末均为 0 也必须记（[0, 0]）——这是有向图的回零边；剔除会让节点学不到"已归零"，起播缓动按滞留旧节点值把开关再次摆出
             state[pid] = [round(pts[0][1], 4), round(pts[-1][1], 4)]
         elif abs(pts[0][1]) > 1e-4 or abs(pts[-1][1]) > 1e-4:
-            # 连续参数只要首/末残留非零就记：收尾动作把它带回 0 的（末=0 首
-            # 非 0）也必须记，否则节点里的旧残留永远清不掉
+            # 连续参数只要首/末残留非零就记：收尾动作把它带回 0 的（末=0 首非 0）也必须记，否则节点里的旧残留永远清不掉
             carry[pid] = [round(pts[0][1], 4), round(pts[-1][1], 4)]
     return state, carry
 
@@ -563,25 +526,14 @@ def clip_group(name: str) -> str:
 
 def animator_routing(env) -> dict | None:
     """解包 AnimatorController 的状态路由表（交互动作的播放入口）。
-
-    游戏不直接 Play 动画，而是 C# 控制器对 Animator SetInteger + SetTrigger，
-    经 AnyState 转移进入目标状态。转移条件只有三类参数：主 int（Equals）
-    即"动作编号"，其值域与状态一一对应——1~19=系统动作（idle/main_*/login/
-    home/mail/mission/wedding…）、101~110=touch_drag 系、201~221=touch_idle
-    系；次 int 是 idle 变体号（主 int=1 时选中 idle_list.idle<N>）；触发器
-    （If 条件）每次手势时置位。动作里嵌的 OnFinishAnim(N) 事件即结束时
-    SetInteger(主 int, N)：系统动作 N=自身编号（自循环），触摸反应 N=0
-    （无状态匹配，回落默认 idle）——这正是交互状态机"播完落节点"的数据源。
-
-    状态→clip 对应与动作编号只存在于本序列化数据，是"状态编号 -> 动作"
-    的权威表。某皮肤未携带某状态的动作时该状态为空跳板（进入后保持当前
-    姿态），实际行为由游戏 C# 决定（如 TouchDrag 分区是否改映射到
-    touch_idle 分支、或直接切换图层参数，均不在 bundle 数据内）。
-
+    游戏不直接 Play 动画，而是 C# 控制器对 Animator SetInteger + SetTrigger，经 AnyState 转移进入目标状态。
+    转移条件只有三类参数：主 int（Equals）即"动作编号"，其值域与状态一一对应——1~19=系统动作（idle/main_*/login/home/mail/mission/wedding…）、101~110=touch_drag 系、201~221=touch_idle 系；次 int 是 idle 变体号（主 int=1 时选中 idle_list.idle<N>）；触发器（If 条件）每次手势时置位。
+    动作里嵌的 OnFinishAnim(N) 事件即结束时 SetInteger(主 int, N)：系统动作 N=自身编号（自循环），触摸反应 N=0（无状态匹配，回落默认 idle）——这正是交互状态机"播完落节点"的数据源。
+    状态→clip 对应与动作编号只存在于本序列化数据，是"状态编号 -> 动作"的权威表。
+    某皮肤未携带某状态的动作时该状态为空跳板（进入后保持当前姿态），实际行为由游戏 C# 决定（如 TouchDrag 分区是否改映射到 touch_idle 分支、或直接切换图层参数，均不在 bundle 数据内）。
     产物结构：
         paramKinds: 条件参数哈希 -> "int"/"trigger"（mode 6=Equals, 1=If）
-        states:     [{name, actionId, subIndex, clip}]，clip=null 表示该皮肤
-                    未携带此动作
+        states:     [{name, actionId, subIndex, clip}]，clip=null 表示该皮肤未携带此动作
     """
     ctrl = None
     clip_names = {}
@@ -670,20 +622,12 @@ def animator_routing(env) -> dict | None:
 
 def animator_fades(env) -> dict | None:
     """解包 AnimatorController 的 AnyState 转场时长表（按 clip 名）。
-
-    每条 AnyState 转场自带过渡时长（m_TransitionDuration）——游戏内各动作
-    过渡快慢不一的出处。m_HasFixedDuration=True 时为绝对秒；False 时为
-    目标 clip 长度的归一化比例，实测仅 0 值出现（login/home/change_* 硬切，
-    0 比例即 0 秒），非零归一化需要 clip 长度折秒，遇到则放弃该条并告警。
-    键取转场目标状态的 clip 名，blend tree 状态把全部节点的 clip 都记上
-    （同一转场进状态，各节点时长一致）；clip 引用跨 bundle 解析不到时退回
-    状态名（本游戏状态名与 clip 名同风格）。
-
-    产物 fades.json：{"default": 众数秒, "transitions": {clip: 秒}}，
-    default 供表外 clip 兜底。运行时 motionPatches.createMotion 按表逐动作
-    设置交叉渐变时长，交互复位缓动窗口同源（mount.js / runtime.js
-    beginSmoothReset）。实测分布：系统/触摸老条目 0.5s，新条目（编号较大者
-    与 _ex 变体）0.25s，login/home/change_in/change_out 0s 硬切。
+    每条 AnyState 转场自带过渡时长（m_TransitionDuration）——游戏内各动作过渡快慢不一的出处。
+    m_HasFixedDuration=True 时为绝对秒；False 时为目标 clip 长度的归一化比例，仅 0 值出现（login/home/change_* 硬切，0 比例即 0 秒），非零归一化需要 clip 长度折秒，遇到则放弃该条并告警。
+    键取转场目标状态的 clip 名，blend tree 状态把全部节点的 clip 都记上（同一转场进状态，各节点时长一致）；clip 引用跨 bundle 解析不到时退回状态名（本游戏状态名与 clip 名同风格）。
+    产物 fades.json：{"default": 众数秒, "transitions": {clip: 秒}}，default 供表外 clip 兜底。
+    运行时 motionPatches.createMotion 按表逐动作设置交叉渐变时长，交互复位缓动窗口同源（mount.js / runtime.js beginSmoothReset）。
+    分布：系统/触摸老条目 0.5s，新条目（编号较大者与 _ex 变体）0.25s，login/home/change_in/change_out 0s 硬切。
     """
     ctrl = None
     clip_names = {}
@@ -1069,10 +1013,8 @@ def main() -> None:
         )
 
     # --- model3.json
-    # Raycastable 网格名即原版点击分区 (TouchHead/TouchBody/TouchIdle3/...),
-    # 加下划线、保留序号后作为命中区名 = 对应动作文件名 (TouchIdle3 -> touch_idle3):
-    # 分区与动作一一对应, 点哪个部位播哪支; 不能剥掉序号归组, 否则同名命中区
-    # 在 pixi-live2d-display 里会互相覆盖, 且无法定位到具体动作
+    # Raycastable 网格名即原版点击分区 (TouchHead/TouchBody/TouchIdle3/...)，加下划线、保留序号后作为命中区名 = 对应动作文件名 (TouchIdle3 -> touch_idle3)。
+    # 分区与动作一一对应，点哪个部位播哪支；不能剥掉序号归组，否则同名命中区在 pixi-live2d-display 里会互相覆盖，且无法定位到具体动作。
     def hit_area_name(mesh: str) -> str:
         name = mesh.lower()
         return f"touch_{name[5:]}" if name.startswith("touch") else name
@@ -1101,12 +1043,9 @@ def main() -> None:
     )
 
     # --- 交互状态机数据（本项目扩展文件，标准运行时忽略）
-    # clips: 每支动作的 AnimationEvent（OnAnimEvent/OnFinishAnim 状态编号）
-    #        与开关型参数的首/末值（[起, 止]，跨动作持续的菜单/道具开关）。
-    # animator: AnimatorController 状态路由表（状态 -> 动作编号 -> clip），
-    #           OnFinishAnim(N) 即结束时回写的动作编号（见函数注释）。
-    # 运行时据此实现：点击门控（仅菜单摊开时可点菜单分支）、跨动作保留
-    # 状态参数、动作结束上报状态编号。
+    # clips: 每支动作的 AnimationEvent（OnAnimEvent/OnFinishAnim 状态编号）与开关型参数的首/末值（[起, 止]，跨动作持续的菜单/道具开关）。
+    # animator: AnimatorController 状态路由表（状态 -> 动作编号 -> clip），OnFinishAnim(N) 即结束时回写的动作编号（见函数注释）。
+    # 运行时据此实现：点击门控（仅菜单摊开时可点菜单分支）、跨动作保留状态参数、动作结束上报状态编号。
     interaction_data = {"clips": interaction_clips}
     routing = animator_routing(env)
     if routing:

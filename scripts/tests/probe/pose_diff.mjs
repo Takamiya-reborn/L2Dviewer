@@ -1,15 +1,8 @@
 /**
- * 参数姿态几何探针（通用 CLI）。
- * 按「节点尾值 + motion 曲线@t + 手工覆盖」构造若干候选参数态，对真实 moc3
- * 逐个 update，打印各姿态的网格包围盒，以及指定姿态 vs 第一个姿态（基准）
- * 的按 drawable 顶点最大位移排名——定位"扭曲/错位"来自哪个参数态假设。
+ * 参数姿态几何探针（通用 CLI）。按「节点尾值 + motion 曲线@t + 手工覆盖」构造若干候选参数态，对真实 moc3 逐个 update，打印各姿态的网格包围盒，以及指定姿态 vs 第一个姿态（基准）的按 drawable 顶点最大位移排名——定位姿态差异来自哪个参数态假设。
  *
  * 用法（仓库根目录）：
- *   node scripts/tests/probe/pose_diff.mjs models/fulici/fulici_2 \
- *     --pose "S_GAME: clip=touch_idle4 motion=idle4@0" \
- *     --pose "H1: clip=touch_idle4 motion=idle@0" \
- *     --pose "H2: motion=idle4@0 set=ParamEyeLOpen=1" \
- *     [--diff 1,2,3] [--skip-diff]
+ *   node scripts/tests/probe/pose_diff.mjs models/fulici/fulici_2 --pose "S_GAME: clip=touch_idle4 motion=idle4@0" --pose "H1: clip=touch_idle4 motion=idle@0" --pose "H2: motion=idle4@0 set=ParamEyeLOpen=1" [--diff 1,2,3] [--skip-diff]
  *
  * 姿态 spec（--pose "标签: k=v ..."，标签可省）：
  *   clip=<name>        interaction clip 的节点尾值（state+carry 的 end）

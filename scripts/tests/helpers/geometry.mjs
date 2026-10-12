@@ -1,6 +1,6 @@
 /**
  * drawable 几何快照与姿态对比（node 侧探针通用）。
- * 典型用法：不同参数假设下 model.update() 后对比顶点位移，定位扭曲/错位来源。
+ * 典型用法：不同参数假设下 model.update() 后对比顶点位移，定位姿态差异的参数来源。
  */
 
 /** model.update() 后的 drawable 顶点快照：{ pos: Float32Array[], op: Float32Array } */

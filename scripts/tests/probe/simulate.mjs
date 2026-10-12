@@ -1,18 +1,13 @@
 /**
- * 交互管线场景重放探针（通用 CLI）。
- * 用真实 InteractionRuntime + DragOrchestrator + createActions 代码 + 真实资产，
- * 在 node 里按 60fps 重放点击/等待/复位场景，末尾 dump 机器状态与参数，
- * 并可与"游戏应然态"（clip 节点尾值 + 变体 motion 曲线@t）逐参数对比。
+ * 交互管线场景重放探针（通用 CLI）。用真实 InteractionRuntime + DragOrchestrator + createActions 代码 + 真实资产，在 node 里按 60fps 重放点击/等待/复位场景，末尾 dump 机器状态与参数，并可与"游戏应然态"（clip 节点尾值 + 变体 motion 曲线@t）逐参数对比。
  *
  * 用法（仓库根目录）：
- *   node scripts/tests/probe/simulate.mjs models/fulici/fulici_2 \
- *     --scene "wait:0.5 click:TouchIdle1 wait:4.5 click:TouchIdle4 wait:13" \
- *     [--tap] [--param dianjikyc,All_Size] [--game "touch_idle4 idle4@0"]
+ *   node scripts/tests/probe/simulate.mjs models/fulici/fulici_2 --scene "wait:0.5 click:TouchIdle1 wait:4.5 click:TouchIdle4 wait:13" [--tap] [--param dianjikyc,All_Size] [--game "touch_idle4 idle4@0"]
  *
  *   --scene  空格分隔的步骤序列：
  *              wait:<sec>          播 <sec> 秒
  *              click:<zone>[:hold]  点区域（hold 默认 0.15）
- *              reset               ctx.actions.resetInteraction()（修复版时序）
+ *              reset               ctx.actions.resetInteraction()（对齐挂载层复位时序）
  *   --tap    打印 orchestrator 的 [tap] 调试行
  *   --param  末尾追加打印这些参数的当前值（逗号分隔）
  *   --game   "<clip> <motion>[@<t>]"，与应然态对比（差 >0.01 的参数）
@@ -81,8 +76,7 @@ if (game) {
   const P_ids = sim.P.ids
   console.log(`\n--- viewer 参数态 vs 应然态 (${clipName} 节点尾值 + ${motionClip}@${t.toFixed(3)}，差 >0.01)`)
   let diffs = 0
-  // 遍历全部参数：clip/motion 未覆盖的参数以 moc3 默认值为应然态，
-  // 这样"机器把开关写偏了"（如默认 1 的开关被写成 0）也能暴露
+  // 遍历全部参数：clip/motion 未覆盖的参数以 moc3 默认值为应然态，默认值非 0 的开关被写偏也能暴露
   for (let i = 0; i < sim.count; i++) {
     const want = expected[P_ids[i]] ?? sim.P.defaultValues[i]
     const d = sim.values[i] - want
