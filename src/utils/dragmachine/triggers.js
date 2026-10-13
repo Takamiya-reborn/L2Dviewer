@@ -1,6 +1,6 @@
 /** 触发类型 -> 处理器映射表（扩展点：往表里加条目即接入新类型）。处理器签名 (machine, now, dt) -> void，在 step 里每帧调用，自身负责触发条件判定（冷却由 triggerAble 统一前置过滤）。
- * type 2/6/9（点击/连点/点参）不在此表：它们的触发由松手判定 + clickTriggerTime 确认窗口驱动（见 onUp/applyClickTrigger），与游戏 checkClickAction 对三种类型共用的行为一致。
- * 后续按 live2ddrag.lua 的 updateTrigger 逐型补齐：10 动作链（isName 检测当前动画过 trigger_rate）、14 区间上下行触发、15/16 下棋小游戏（参照 Live2DExtend：九宫格 3×3 连线判定、按 getParameterTarget() ±1 记子）等，等有实际皮肤再实测。
+ * type 2/6/9/11（点击/连点/点参/点区间）不在此表：它们的触发由松手判定 + clickTriggerTime 确认窗口驱动（见 onUp/applyClickTrigger），与游戏 checkClickAction 对四种类型共用的行为一致。
+ * 后续按 live2ddrag.lua 的 updateTrigger 逐型补齐：14 区间上下行触发、15/16 下棋小游戏（参照 Live2DExtend：九宫格 3×3 连线判定、按 getParameterTarget() ±1 记子）等，等有实际皮肤再实测。
  */
 export const TRIGGER_HANDLERS = {
   /** type 1 DRAG_TIME_ACTION（DD:1006-1021）：按住且参数现值进 num 邻域（|parameterValue-num| < |num|*0.25，用当前值、不做 fix）持续 time 秒触发；time/num 缺省回落 action_list 当前项（DD:992-1004，Lua 1-based 取 -1）。
@@ -87,6 +87,28 @@ export const TRIGGER_HANDLERS = {
     m.orch.pressLock(`type8 ${m.drawAbleName}${m._active ? ' 按住' : ' 松开'}`, m._active)
     if (m._active) {
       m.setTargetValue(m.fixTarget(m.parameterTargetValue + dt / (m.actionTrigger.delta || 1)))
+    }
+  },
+  /** type 7 DRAG_LISTENER_EVENT（DD:1109-1112）：原文 apply 分支前置 _listenerTrigger，该字段全文件只读不写（live2ddrag.lua:1110 唯一出现）——游戏里这条触发路径就是死的；机器的真实行为全在 onListenerEvent 的监听响应（已移植）。占位空处理器让 step 的分发免打"未实现"告警，语义与原文一致：什么都不发生。 */
+  7() {},
+  /** type 10 DRAG_ANIMATION_PLAY（DD:1137-1165）：动作链——当前播出的 state 名等于 trigger_name（"idle" 拼 trigger_index>0 的序号）且变体号等于 trigger_index 时，归一化播进过 trigger_rate 即触发本机 action（baifeng_2 的 idle9 播到 95% 接 touch_drag9）。
+   * animationPlayApply 单次闩锁：命中期间不再触发，state 离开（含链尾动作起播）后复位——游戏在 IsName 不匹配的 else 分支清标记，链尾动作播完回 idle9 后会再次过点再次触发，循环保持原文语义。
+   * 归一化时间 = 起播时刻起的经过时长 ÷ clip 时长（interaction.json clips 表，编排器 noteMotionStart 记 playStartAt、mount/sim 注入 clipDurationOf）；表缺时长时跳过（不闩锁，原文该分支总有时长可查）。 */
+  10(m, now) {
+    const at = m.actionTrigger
+    let state = at.trigger_name
+    if (state === 'idle' && at.trigger_index > 0) state += at.trigger_index
+    if (m.orch.playingClip !== state || m.orch.idleIndex !== at.trigger_index) {
+      m.animationPlayApply = false
+      return
+    }
+    if (m.animationPlayApply) return
+    const duration = m.orch.clipDurationOf?.(state)
+    if (!duration) return
+    if (at.trigger_rate <= (now - m.orch.playStartAt) / duration) {
+      m.applyTrigger()
+      m.isTriggerAtion = false
+      m.animationPlayApply = true
     }
   },
 }

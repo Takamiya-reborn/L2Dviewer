@@ -363,6 +363,10 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
     for h, n in unknown_attr.items():
         print(f"[warn] {clip.m_Name}: {n} 条未知 attribute 0x{h:08x}，曲线被跳过")
 
+    # Cubism 内核按曲线类型顺序求值（Model→Parameter→PartOpacity 三段循环，遇类型切换即停），目标混排会让其后同型曲线整体失效，按官方约定分组排序（稳定排序，同目标内相对次序不变）
+    target_rank = {"Model": 0, "Parameter": 1, "PartOpacity": 2}
+    curves.sort(key=lambda c: target_rank.get(c["Target"], 1))
+
     duration = max(
         (max(c["Segments"][0], c["Segments"][-2]) for c in curves), default=0.0
     )

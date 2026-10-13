@@ -16,6 +16,7 @@ export function createTickerCallback(ctx) {
     ctx.hud.value = {
       zones: live?.state ?? [],
       carried: live?.carried ?? [],
+      rings: live?.rings ?? [],
       machine: ctx.orch?.hudInfo() ?? null,
       scale: ctx.dragScale,
       // 挂起/播放中的动作（有向图 pending）：对照特效开关读数与动作的对应关系

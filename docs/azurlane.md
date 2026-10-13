@@ -344,4 +344,4 @@ idle 是循环动作，起播时立即把自己的状态和摆位末值落到账
 
 Lua 文件来自社区维护的 [AzurLaneLuaScripts](https://github.com/AzurLaneTools/AzurLaneLuaScripts)，不是游戏 bundle 的一部分。C# 控制器由 APK 中的 `libil2cpp.so`、`global-metadata.dat` 和 Il2CppDumper 输出辅助确认。项目中的 `scripts/pull_lua.py`、`scripts/pull_cs.py` 和 `scripts/disasm.py` 分别用于获取 Lua 快照、C# dump 和定点反汇编。
 
-本文涉及的运行时装配、动作状态和参数机实现集中在 [src/l2d](../src/l2d/)、[src/utils/dragmachine](../src/utils/dragmachine/) 和 [src/utils/interaction](../src/utils/interaction/)；对应行为由 `scripts/tests/` 下的 dragmachine、interaction、listener、trigger 和模型测试覆盖。
+本文涉及的运行时装配、动作状态和参数机实现集中在 [src/l2d](../src/l2d/)、[src/utils/dragmachine](../src/utils/dragmachine/) 和 [src/utils/interaction](../src/utils/interaction/)；对应行为由 `scripts/tests/` 下 unit/（dragmachine 控制层、interaction 状态机、render 渲染参数层）与 asset/（真实模型资产回归）的测试覆盖。

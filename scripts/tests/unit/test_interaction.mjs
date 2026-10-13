@@ -1,20 +1,20 @@
-// 冒烟测试：InteractionRuntime 有向图状态机（node scripts/tests/test_interaction.mjs，在仓库根目录跑）。
+// 冒烟测试：InteractionRuntime 有向图状态机（node scripts/tests/unit/test_interaction.mjs，在仓库根目录跑）。
 // fixture 复刻 touch_idle1（摊开菜单）→ touch_idle2（分支，前置 caidan=1）→ touch_idle3（收尾带回 0）这条游戏内实况链路。
-import { suite } from './helpers/suite.mjs'
-import { makeCoreModel, makeModel } from './helpers/fakes.mjs'
+import { suite } from '../helpers/suite.mjs'
+import { makeCoreModel, makeModel } from '../helpers/fakes.mjs'
 
 const { check, finish } = suite('interaction 状态机')
 
 // interaction.js 顶层 import pixi-live2d-display/cubism4，要求 Core 先在位
 const { cubismCoreAvailable, loadCubismCore } = await import(
-  './helpers/cubism.mjs'
+  '../helpers/cubism.mjs'
 )
 if (!cubismCoreAvailable()) {
   console.log('-- 缺 public/libs/live2dcubismcore.min.js，整支跳过')
   process.exit(0)
 }
 await loadCubismCore()
-const { InteractionRuntime } = await import('../../src/utils/interaction/index.js')
+const { InteractionRuntime } = await import('../../../src/utils/interaction/index.js')
 
 const clips = {
   // 摊开菜单：caidan 0→1，场景位移 All_X 0→2.34（连续摆位 carry）
@@ -130,15 +130,15 @@ const fixture = () => {
   check('菜单已摊开（前一支转移已结算）→ 分支可达', runtime.canPlay('touch_idle2') === true)
 }
 
-// --- 4) firstVisibleHit：手势路由 + 透明度过滤 ---
+// --- 4) firstVisibleHit：手势路由（纯几何，不过滤透明度）---
 {
   const { runtime } = fixture()
   check(
-    'tap 取非 drag 分区，跳过隐藏网格',
-    runtime.firstVisibleHit(['touch_drag3', 'touch_body', 'touch_head'], 'tap') === 'touch_head',
+    'tap 取首个非 drag 分区（隐藏网格也响应，纯几何射线）',
+    runtime.firstVisibleHit(['touch_drag3', 'touch_body', 'touch_head'], 'tap') === 'touch_body',
   )
   check('drag 只取 drag 分区', runtime.firstVisibleHit(['touch_drag3', 'touch_head'], 'drag') === 'touch_drag3')
-  check('隐藏网格（不透明度≈0）不响应', runtime.firstVisibleHit(['touch_body'], 'tap') === '')
+  check('隐藏网格（不透明度≈0）照样路由（游戏同款）', runtime.firstVisibleHit(['touch_body'], 'tap') === 'touch_body')
 }
 
 // --- 5) resetParameters / resetState ---

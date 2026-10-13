@@ -1,15 +1,15 @@
-// 回归测试：shengluyisi_5 梯子两圈链路（node scripts/tests/test_ladder_loop.mjs，仓库根目录跑）。
+// 回归测试：shengluyisi_5 梯子两圈链路（node scripts/tests/asset/test_ladder_loop.mjs，仓库根目录跑）。
 // 游戏内链路：drag1 → drag3:4 → … → drag13:19 →(环回)→ drag3:4。
 // 用真实 l2d.json + 真机器代码驱动两圈，断言每次点击都触发动作、第二圈起点（drag13:19 → drag3:4）不断链。
 import { readFileSync } from 'node:fs'
-import { DragOrchestrator } from '../../src/utils/dragmachine/index.js'
-import { stubLocalStorage } from './helpers/fakes.mjs'
-import { suite } from './helpers/suite.mjs'
+import { DragOrchestrator } from '../../../src/utils/dragmachine/index.js'
+import { stubLocalStorage } from '../helpers/fakes.mjs'
+import { suite } from '../helpers/suite.mjs'
 
 stubLocalStorage()
 
 const config = JSON.parse(
-  readFileSync(new URL('../../models/shengluyisi/shengluyisi_5/shengluyisi_5.l2d.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../models/shengluyisi/shengluyisi_5/shengluyisi_5.l2d.json', import.meta.url), 'utf8'),
 )
 const fakeModel = { internalModel: { coreModel: { getParameterIndex: () => -1 } } }
 const played = []

@@ -140,7 +140,7 @@ node scripts/tests/run_all.mjs interaction
 
 测试入口会自动发现并串行运行全部 `test_*.mjs` 文件，最后按退出码汇总结果。
 
-`scripts/tests/probe/` 另有不进测试入口的诊断 CLI——交互管线场景重放（simulate.mjs）、参数姿态几何对比（pose_diff.mjs）、moc3 参数表/命中区核对等，排查“点击不触发/播错动作/扭曲错位”类运行时问题时手动运行，用法见 [docs/test.md](docs/test.md)。
+`scripts/tests/probe/` 另有不进测试入口的诊断 CLI——交互管线场景重放与分区审计（drive.mjs）、复位/姿态差分（diff.mjs）、moc3 资产与配置阅读（moc3.mjs / config.mjs）等，排查“点击不触发/播错动作/扭曲错位”类运行时问题时手动运行，用法见 [docs/test.md](docs/test.md)。
 
 ## 致谢
 

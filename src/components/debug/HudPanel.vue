@@ -1,4 +1,23 @@
 <script setup>
+// 判定门刻度：区间端点映射到 [lo,hi] 全程的百分比
+function spanPct(gate, v) {
+  const span = gate.hi - gate.lo
+  return span > 0 ? ((v - gate.lo) / span) * 100 : 0
+}
+
+// 判定门实时值（模型实时读数，可能为 0）
+function fmtValue(v) {
+  return typeof v === 'number' ? v.toFixed(2) : '—'
+}
+
+// 判定引导环逐门读数（hints.js ringReads）：在画 = α 与锚点坐标，未画 = 原因
+function ringText(gate, rings) {
+  const r = (rings ?? []).find((e) => e.zone === gate.zone)
+  if (!r) return '环:无读数'
+  if (r.why) return '环:' + r.why
+  return `环:画 a=${r.a.toFixed(2)} @(${Math.round(r.x)},${Math.round(r.y)})`
+}
+
 defineProps({
   /** 结构化 HUD 读数（l2d/hud.js 组装）：状态参数、非默认残留、机器读数、标定 */
   hud: { type: Object, default: null },
@@ -6,8 +25,6 @@ defineProps({
   showDebug: { type: Boolean, default: true },
   /** 触点涟漪（游戏"触点特效"复刻）开关 */
   showRipple: { type: Boolean, default: true },
-  /** 当前皮肤是否配了拖拽参数机（决定"重置交互"按钮显隐） */
-  hasOrch: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'reset'])
@@ -24,7 +41,7 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'rese
     <button class="hint-toggle" type="button" @click="emit('toggle-ripple')">
       {{ showRipple ? '关闭触点涟漪' : '开启触点涟漪' }}
     </button>
-    <button v-if="hasOrch" class="hint-toggle" type="button" @click="emit('reset')">
+    <button class="hint-toggle" type="button" @click="emit('reset')">
       重置交互
     </button>
   </div>
@@ -34,7 +51,8 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'rese
       <span class="debug-pair">{{ hud.motion.name ?? '（无挂起）' }}</span>
       <span v-if="hud.motion.idle" class="debug-pair dim">idle循环</span>
       <span v-if="hud.motion.fallback" class="debug-pair dim">
-        {{ hud.motion.fallback.source }}:{{ hud.motion.fallback.clip }}[{{ hud.motion.fallback.index }}]<template v-if="hud.motion.fallback.degraded">退化</template>
+        {{ hud.motion.fallback.source }}:{{ hud.motion.fallback.clip }}[{{ hud.motion.fallback.index }}]<template
+          v-if="hud.motion.fallback.degraded">退化</template>
       </span>
     </div>
     <template v-if="hud.zones.length || hud.carried.length">
@@ -48,7 +66,8 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'rese
       <div class="debug-row">
         <span class="debug-key">机器</span>
         <span class="debug-pair">idle={{ hud.machine.idle }}</span>
-        <span class="debug-pair">白名单={{ hud.machine.whitelist }}<template v-if="hud.machine.wlIdle">(t{{ hud.machine.wlIdle }})</template></span>
+        <span class="debug-pair">白名单={{ hud.machine.whitelist }}<template v-if="hud.machine.wlIdle">(t{{
+          hud.machine.wlIdle }})</template></span>
         <span v-if="hud.machine.actor" class="debug-pair">落账=#{{ String(hud.machine.actor).slice(-2) }}</span>
         <span v-if="hud.machine.able" class="debug-pair">按压锁</span>
         <span v-if="hud.machine.active" class="debug-pair">按住:{{ hud.machine.active }}</span>
@@ -71,25 +90,29 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'rese
         <span class="debug-key">联动</span>
         <span v-for="([k, v], i) in hud.machine.relations" :key="'r' + i" class="debug-pair">{{ k }}={{ v }}</span>
       </div>
+      <div v-for="g in hud.machine.gates" :key="'g' + g.zone + g.param" class="debug-row">
+        <span class="debug-key">判定</span>
+        <span class="gate">
+          <span class="gate-head">{{ g.zone }} {{ g.param }}={{ fmtValue(g.value) }}（{{ ringText(g, hud.rings) }}）</span>
+          <span class="gate-track">
+            <span v-for="(b, i) in g.bands" :key="i" class="gate-band"
+              :class="{ hit: g.value >= b.lo && g.value < b.hi }"
+              :style="{ left: spanPct(g, b.lo) + '%', width: spanPct(g, b.hi) - spanPct(g, b.lo) + '%' }">
+              {{ b.action }}
+            </span>
+          </span>
+        </span>
+      </div>
     </template>
     <template v-if="hud.palette">
       <div class="debug-row">
         <span class="debug-key">调色板</span>
         <span v-if="hud.palette.open" class="debug-pair dim">面板开</span>
-        <span
-          v-for="([id, v], i) in hud.palette.axes"
-          :key="'p' + i"
-          class="debug-pair clickable"
-          title="点击循环 0 → 1 → -1"
-          @click="hud.palette.cycle(id)"
-        >
+        <span v-for="([id, v], i) in hud.palette.axes" :key="'p' + i" class="debug-pair clickable"
+          title="点击循环 0 → 1 → -1" @click="hud.palette.cycle(id)">
           {{ id }}={{ v }}
         </span>
-        <span
-          class="debug-pair dim clickable"
-          title="全部色轴归零（默认方案）"
-          @click="hud.palette.reset()"
-        >复位</span>
+        <span class="debug-pair dim clickable" title="全部色轴归零（默认方案）" @click="hud.palette.reset()">复位</span>
       </div>
     </template>
     <div class="debug-row">
@@ -180,5 +203,48 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'rese
 
 .debug-pair.clickable:hover {
   color: #e8e8ee;
+}
+
+/* 判定门刻度条（type 11 区间机）：轨道 + 各区间段，实时值所在段点亮 */
+.gate {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+}
+
+.gate-head {
+  white-space: nowrap;
+}
+
+.gate-track {
+  position: relative;
+  height: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gate-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #6f9f88;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 实时值落在的区间段：点亮 */
+.gate-band.hit {
+  background: rgba(159, 217, 189, 0.28);
+  color: #dff5ea;
 }
 </style>

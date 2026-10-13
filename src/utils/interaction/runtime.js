@@ -161,6 +161,43 @@ export class InteractionRuntime {
     return p
   }
 
+  /** clip 驱动的参数 id 集（motion3 全部 Parameter 曲线 Id）：起播缓动的豁免表。与 loadMotionBoundary 同文件各取所需（浏览器 HTTP 缓存去重），解析成功后同步落 _drivenSet */
+  loadMotionDriven(clip) {
+    this._driven ??= new Map()
+    let p = this._driven.get(clip)
+    if (!p) {
+      const file = this._clipFiles?.get(clip)
+      if (!file || this._motionBase == null) return Promise.resolve(null)
+      p = fetch(`${this._motionBase}${file}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((m) => {
+          const out = new Set()
+          for (const c of m?.Curves ?? []) {
+            if (c.Target === 'Parameter') out.add(c.Id)
+          }
+          this._drivenSet ??= new Map()
+          this._drivenSet.set(clip, out)
+          return out
+        })
+        .catch(() => null)
+      this._driven.set(clip, p)
+    }
+    return p
+  }
+
+  /** clip 驱动参数的下标集（同步读解析缓存；未预热返回 null，调用方按无豁免处理） */
+  drivenIdxOf(clip) {
+    const set = clip ? this._drivenSet?.get(clip) : null
+    if (!set) return null
+    const core = this.model.internalModel.coreModel
+    const out = new Set()
+    for (const pid of set) {
+      const idx = core.getParameterIndex(pid)
+      if (idx >= 0) out.add(idx)
+    }
+    return out
+  }
+
   /** 注入动作文件源（mount.js 在 runtime 创建后调）：记录 model3 同目录基址与 clip -> File 映射，并预热全部 clip 的边界缓存 */
   attachMotions(modelUrl) {
     this._motionBase = modelUrl.replace(/[^/]*$/, '')
@@ -172,7 +209,10 @@ export class InteractionRuntime {
         if (clip) this._clipFiles.set(clip, d.File)
       }
     }
-    for (const clip of this._clipFiles.keys()) this.loadMotionBoundary(clip)
+    for (const clip of this._clipFiles.keys()) {
+      this.loadMotionBoundary(clip)
+      this.loadMotionDriven(clip)
+    }
   }
 
   /** 节点复位到干净默认态（"重置交互状态"用）：清挂起转移，状态参数全部回 moc 默认；配合拖拽参数机编排器的 resetAll 一起调 */
@@ -194,23 +234,20 @@ export class InteractionRuntime {
   }
 
   /**
-   * 从网格级命中结果里挑第一个可用分区。入参来自 meshHitTest（已按渲染序排好、视觉最上层在前），本方法只做两件事：
-   * - 透明度过滤：命中检测只看网格形状，不判断不透明度，隐藏部位（其他姿态的判定网格、摆位零件）也会响应；按 drawable 不透明度过滤，只保留可见命中区（与游戏 raycast 行为一致）
-   * - 手势区分（与游戏一致）：一次 raycast 会同时命中 idle/head/body 与 drag 两族分区，控制器按手势挑族——点击取非 drag 分区，拖拽只取 drag 分区
+   * 从网格级命中结果里挑第一个可用分区。入参来自 meshHitTest（已按渲染序排好、视觉最上层在前），本方法只做手势区分（与游戏一致）：一次 raycast 会同时命中 idle/head/body 与 drag 两族分区，控制器按手势挑族——点击取非 drag 分区，拖拽只取 drag 分区。
+   * 不做透明度过滤：游戏 GetTouchPart/GetDragPart 与 CubismRaycaster 都是纯几何射线，隐藏但在位的判定网格照样响应（baifeng_2 idle17 隐藏标记实机可拖，见 gestures.js machineZonesAt 注释）。
    *
    * @param {string[]} names 命中的分区名（meshHitTest 的返回）
    * @param {'tap'|'drag'} gesture
    */
   firstVisibleHit(names, gesture = 'tap') {
-    const core = this.model.internalModel.coreModel
     const areas = this.model.internalModel.hitAreas ?? {}
-    const hasOpacity = typeof core.getDrawableOpacity === 'function'
     const wantDrag = gesture === 'drag'
     for (const name of names) {
       const index = areas[name]?.index
       if (index === undefined) continue
       if (name.startsWith('touch_drag') !== wantDrag) continue
-      if (!hasOpacity || core.getDrawableOpacity(index) > 0.001) return name
+      return name
     }
     return ''
   }
@@ -236,24 +273,27 @@ export class InteractionRuntime {
 
   /**
    * 平滑复位登记（motionStart 触发）：目的与 resetParameters 相同——非状态参数回 moc3 默认、状态机参数对齐到跟踪节点，防止上一支动作遗留的图层/道具开关（如 ParamCrusLLayer2、heiping）污染后续动作。
-   * 落笔方式为登记一个与动作渐变同窗口的缓动复位，由 applySmoothReset 每帧落笔——新动作曲线驱动的参数在同一帧被渐变混合逐步接管（权重升满后全权接管），未驱动参数缓动到默认/节点值，两头都无跳变；硬写会毁掉交叉渐变的混合起点。resetParameters（硬写）保留给"重置交互"的无挂载回退链——那里刻意瞬跳，且在模型隐藏的屏外窗口内进行，瞬跳不示人。
+   * 落笔方式为登记一个与动作渐变同窗口的缓动复位，由 applySmoothReset 每帧落笔——未驱动参数缓动到默认/节点值，两头都无跳变；硬写会毁掉交叉渐变的混合起点。resetParameters（硬写）保留给挂载入口——模型未揭幕时硬写无示人瞬跳。
+   * 新动作（clip）曲线驱动的参数整段豁免：引擎渐入以参数缓冲当前值为混合基线逐帧混入曲线（起播时旧动作已被终写），复位在这些参数上不落笔，混合基线即上一支动作的实际末态——与游戏动作间不复位参数的语义一致；缓存未预热时无豁免表、全量复位。
    *
    * @param {number} [durationSec] 缓动窗口（秒）：mount.js 按起播 clip 从 fades.json 查传入，与新动作渐入严格同窗；0 秒转场（login/home/change_* 硬切）同帧瞬跳落定，等价硬写
+   * @param {string|null} [clip] 新起播动作的 clip 名，驱动参数豁免表由此解析
    */
-  beginSmoothReset(durationSec = RESET_FADE) {
+  beginSmoothReset(durationSec = RESET_FADE, clip = null) {
     const core = this.model.internalModel.coreModel
+    const exempt = this.drivenIdxOf(clip)
     const entries = []
     const count = core.getParameterCount()
     for (let i = 0; i < count; i++) {
-      if (this.preserveIdx.has(i)) continue
+      if (this.preserveIdx.has(i) || exempt?.has(i)) continue
       const from = core.getParameterValueByIndex(i)
       const target = core.getParameterDefaultValue(i)
       if (from !== target) entries.push({ idx: i, from, target })
     }
-    // 状态机/摆位参数：实时值偏离节点（打断残留，如菜单摊到一半）时缓动对齐到协议态；与硬写路径相同的节点读取时机（先于 trackMotionStart 结算被顶掉的挂起动作），语义不变只是落笔变缓
+    // 状态机/摆位参数：实时值偏离节点（打断残留，如菜单摊到一半）时缓动对齐到协议态；与硬写路径相同的节点读取时机（先于 trackMotionStart 结算被顶掉的挂起动作），语义不变只是落笔变缓；新动作驱动的参数同豁免
     for (const [pid, value] of this.node) {
       const idx = core.getParameterIndex(pid)
-      if (idx < 0 || idx >= core.getParameterCount()) continue
+      if (idx < 0 || idx >= core.getParameterCount() || exempt?.has(idx)) continue
       const from = core.getParameterValueByIndex(idx)
       if (from !== value) entries.push({ idx, from, target: value })
     }
@@ -264,6 +304,11 @@ export class InteractionRuntime {
       return
     }
     this._resetTween = { start: performance.now() / 1000, duration: durationSec, entries }
+  }
+
+  /** 平滑复位缓动是否仍在窗口内：挂载揭幕（mount.js）据此等初始 idle 的复位缓动走完才示人 */
+  get resetPending() {
+    return !!this._resetTween
   }
 
   /** 平滑复位每帧落笔（挂 beforeMotionUpdate：写在动作求值前——新动作曲线同帧按渐变权重混合本帧写入值，权重升满后全权接管；物理/氛围/机器层在动作求值后各自写入，不受影响）。缓动曲线与内核渐变同款 sine */
@@ -284,7 +329,7 @@ export class InteractionRuntime {
     }
   }
 
-  /** 按节点硬复位参数（"重置交互"无挂载回退链专用，刻意瞬跳）：非状态机参数回到 moc3 默认值，状态机参数对齐到跟踪节点的值；动作起播路径走 beginSmoothReset（见其注释）。仅在模型隐藏的屏外窗口内调用，瞬跳不示人 */
+  /** 按节点硬复位参数（挂载入口专用，模型未揭幕，瞬跳不示人）：非状态机参数回到 moc3 默认值，状态机参数对齐到跟踪节点的值；动作起播与重置交互的可见路径走 beginSmoothReset（见其注释） */
   resetParameters() {
     const core = this.model.internalModel.coreModel
     const count = core.getParameterCount()

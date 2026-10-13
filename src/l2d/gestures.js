@@ -31,24 +31,22 @@ export function createGestures(ctx) {
   }
 
   /**
-   * 指针位置上的全部"可见机器分区"：网格级精确命中（meshHitTest，与游戏 CubismRaycaster 同一几何）的分区里过滤掉透明度归零的（隐藏部位不响应，与游戏 raycast 行为一致），且必须是 ship_l2d 配置的 draw_able_name。
+   * 指针位置上的全部机器分区：网格级精确命中（meshHitTest，与游戏 CubismRaycaster 同一几何），且必须是 ship_l2d 配置的 draw_able_name。
+   * 不做透明度过滤——游戏路由是纯几何射线：GetDragPart 方法体无 opacity 检查，CubismRaycaster 同样不查透明度（baifeng_2 idle17 的隐藏标记游戏里照样可拖，实机背书）；隐藏但在位的标记与可见标记同等路由，泊位在画布外的仍物理不可达。
    * 数组序 = 路由优先级：**ship_l2d 条目序最大的命中赢**。依据是游戏 Live2dChar.GetDragPart 的反汇编——遍历全部 raycast 命中，对每个命中的 drawable 名在 DragParts 名单里 FindIndex，更新条件 idx≥0 且 best≤idx+1 → running max（csinc 隐含 +1），返回名单下标最大者，与视觉渲染序、射线距离均无关。
    */
   function machineZonesAt(x, y) {
     const model = ctx.model
     const orch = ctx.orch
-    if (!orch || !model) return []
+    // 换模型窗口期 ctx.model 已指向未揭幕的新模型，不可交互
+    if (!orch || !model || !model.visible) return []
     const hits = meshHitTest(model, x, y)
-    const core = model.internalModel.coreModel
     const areas = model.internalModel.hitAreas ?? {}
-    const hasOpacity = typeof core.getDrawableOpacity === 'function'
     const zones = []
     for (const name of hits) {
       const order = orch.zoneOrder(name)
       if (order < 0) continue
-      const index = areas[name]?.index
-      if (index === undefined) continue
-      if (!hasOpacity || core.getDrawableOpacity(index) > 0.001) {
+      if (areas[name]?.index !== undefined) {
         zones.push({ name, order })
       }
     }
@@ -111,7 +109,8 @@ export function createGestures(ctx) {
     if (!pressing) return
     pressing = false
     if (dragging) resetGaze()
-    if (!ctx.model) return
+    // 换模型窗口期 ctx.model 已指向未揭幕的新模型，不可交互
+    if (!ctx.model?.visible) return
     const { x, y } = pointerPos(e)
     const lastGesture = maxDist >= DRAG_THRESHOLD ? 'drag' : 'tap'
     ctx.lastGesture = lastGesture

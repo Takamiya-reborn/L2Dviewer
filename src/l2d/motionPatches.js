@@ -3,6 +3,31 @@ import { Ticker } from 'pixi.js'
 import { Cubism4MotionManager, Live2DModel, config } from 'pixi-live2d-display/cubism4'
 
 let installed = false
+
+// 内核求值循环按曲线类型顺序遍历（Model→Parameter→PartOpacity 三段各一个循环，遇类型切换即停），
+// 曲线数组里目标混排时其后所有同型曲线整体失去求值（官方 motion3 约定按目标分组排序，extract.py 未保证）
+const TARGET_ORDER = { Model: 0, Parameter: 1, PartOpacity: 2 }
+
+/**
+ * 曲线数组按目标秩归一排序（稳定排序，同目标内相对次序不变）；已是分组序时原样返回不动数据。
+ * Meta.Curves 镜像同步指向同一数组，保持文件内两份曲线表一致。
+ */
+export function normalizeCurveTargetOrder(data) {
+  const curves = data?.Curves
+  if (!curves?.length) return data
+  let lastRank = -1
+  for (const curve of curves) {
+    const rank = TARGET_ORDER[curve.Target] ?? TARGET_ORDER.Parameter
+    if (rank < lastRank) {
+      const sorted = [...curves].sort((a, b) => (TARGET_ORDER[a.Target] ?? TARGET_ORDER.Parameter) - (TARGET_ORDER[b.Target] ?? TARGET_ORDER.Parameter))
+      data.Curves = sorted
+      if (Array.isArray(data.Meta?.Curves)) data.Meta.Curves = sorted
+      break
+    }
+    lastRank = rank
+  }
+  return data
+}
 // 当前活动舞台上下文：App.vue 对 L2dStage 用 :key 逐皮肤整体重挂（每次切皮肤都是全新挂载），每次重挂都是**新 ctx**——而本模块的补丁是原型级单例（installed 幂等，只装一次），闭包里不能捕获首个 ctx，必须经 activeCtx 跟随当前活动舞台，否则皮肤切换后回落读的是死挂载的 ctx.orch（idleIndex 停在旧会话）
 let activeCtx = null
 
@@ -31,7 +56,7 @@ export function installMotionPatches(ctx) {
    */
   const createMotion = Cubism4MotionManager.prototype.createMotion
   Cubism4MotionManager.prototype.createMotion = function (data, group, definition) {
-    const motion = createMotion.call(this, data, group, definition)
+    const motion = createMotion.call(this, normalizeCurveTargetOrder(data), group, definition)
     if (data?.Meta?.Loop) {
       motion.setIsLoop(true)
       motion.setIsLoopFadeIn(false)
@@ -47,6 +72,17 @@ export function installMotionPatches(ctx) {
       if (duration != null) {
         motion.setFadeInTime(duration)
         motion.setFadeOutTime(0)
+      }
+    }
+    // 入口硬切标记（mount.js 设置）：控制器默认态入口无转场时长，首支动作满权重起播；仅对标记的 clip 生效一次
+    if (activeCtx._entryHardCutClip) {
+      const clip = (definition?.File ?? '')
+        .split('/')
+        .pop()
+        ?.replace(/\.motion3\.json$/, '')
+      if (clip === activeCtx._entryHardCutClip) {
+        motion.setFadeInTime(0)
+        activeCtx._entryHardCutClip = null
       }
     }
     return motion

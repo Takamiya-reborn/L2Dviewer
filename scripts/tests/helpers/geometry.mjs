@@ -30,6 +30,22 @@ export function poseBBox(snapshot, { visibleOnly = false } = {}) {
   return box
 }
 
+/** 单个 drawable 的顶点包围盒（moc3 画布 px 本地空间） */
+export function drawableBounds(drawables, index) {
+  const vertices = drawables.vertexPositions[index]
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (let i = 0; i < vertices.length; i += 2) {
+    minX = Math.min(minX, vertices[i])
+    maxX = Math.max(maxX, vertices[i])
+    minY = Math.min(minY, vertices[i + 1])
+    maxY = Math.max(maxY, vertices[i + 1])
+  }
+  return { minX, minY, maxX, maxY }
+}
+
 const f0 = (v) => v.toFixed(0)
 
 /** 打印包围盒（全网格 + 可见部分两行） */

@@ -1,11 +1,13 @@
 /**
  * 全管线仿真 harness：真实 InteractionRuntime + DragOrchestrator + createActions 代码 + 真实 moc3 参数表 + 真实 motion3 采样，在 node 里按 60fps 复现 viewer 的帧循环（restoreLayer -> motion 曲线 -> applyLayer）。
- * probe/simulate.mjs 与场景脚本共用，装配顺序与 mount.js 对齐。
+ * probe/drive.mjs 的 replay 子命令与场景脚本共用，装配顺序与 mount.js 对齐。
  */
 import fs from 'fs'
 import path from 'path'
 import { loadMocModel } from './cubism.mjs'
 import { loadMotion, sampleCurve } from './motion3.mjs'
+import { createTestClock } from './clock.mjs'
+import { createTrace } from './trace.mjs'
 
 /**
  * @param {string} dir 皮肤目录（含 <name>.moc3 / .model3.json / .l2d.json / .interaction.json）
@@ -15,6 +17,7 @@ import { loadMotion, sampleCurve } from './motion3.mjs'
  * @param {number} [opts.idleCooldown]    idle 回落节流，默认 0.3（仿库内）
  * @param {Function|null} [opts.debugHook] orchestrator 的 [tap] 调试钩子
  * @param {Function} [opts.log]           动作播放日志出口（默认收集进 motionLog）
+ * @param {object|null} [opts.trace]      trace 接收器；null 时创建逐帧 trace
  * @returns 各装配件 + step/playSeconds/clickZone 场景原语
  */
 export async function createPipelineSim(dir, {
@@ -23,6 +26,7 @@ export async function createPipelineSim(dir, {
   idleCooldown = 0.3,
   debugHook = null,
   log = null,
+  trace = null,
 } = {}) {
   // Core 先加载（pixi-live2d-display 在模块求值时检查 window.Live2DCubismCore），src 模块随后动态 import
   const { model } = await loadMocModel(dir)
@@ -32,6 +36,8 @@ export async function createPipelineSim(dir, {
 
   const P = model.parameters
   const count = P.count
+  const clock = createTestClock().install()
+  const frameTrace = trace ?? createTrace({ parameterIds: P.ids })
 
   // ---- coreModel 适配器（InteractionRuntime/DragOrchestrator 用到的接口）----
   const idxOfId = new Map(P.ids.map((id, i) => [id, i]))
@@ -69,9 +75,8 @@ export async function createPipelineSim(dir, {
   }
 
   // ---- 动作播放仿真（pixi-live2d-display 库行为的最小还原）----
-  let now = 0
-  // 机器内部（onDown/onUp/step 的 clickTriggerTime 等）用 performance.now()，这里统一替换成仿真时钟，否则压缩时间轴下点击窗口永不命中
-  globalThis.performance = { now: () => now * 1000 }
+  let now = clock.nowSeconds()
+  // 机器内部（onDown/onUp/step 的 clickTriggerTime 等）与场景推进共用同一时钟。
   const motionLog = []
   const emitLog = log ?? ((line) => motionLog.push(line))
 
@@ -101,6 +106,27 @@ export async function createPipelineSim(dir, {
     }
     return p
   }
+  // 驱动画数同款本地装载（beginSmoothReset 的驱动参数豁免表），_drivenSet 同步落账使 drivenIdxOf 起播即刻可读
+  runtime.loadMotionDriven = (clip) => {
+    runtime._driven ??= new Map()
+    let p = runtime._driven.get(clip)
+    if (!p) {
+      let out = null
+      try {
+        out = new Set()
+        for (const c of loadMotion(dir, clip).Curves) {
+          if (c.Target === 'Parameter') out.add(c.Id)
+        }
+      } catch { /* 无此动作文件 */ }
+      if (out) {
+        runtime._drivenSet ??= new Map()
+        runtime._drivenSet.set(clip, out)
+      }
+      p = Promise.resolve(out)
+      runtime._driven.set(clip, p)
+    }
+    return p
+  }
   runtime.attachMotions(`file:///${dir}/${name}.model3.json`)
   const l2d = JSON.parse(fs.readFileSync(`${dir}/${name}.l2d.json`, 'utf8'))
   const ctx = { model: stubModel, orch: null, runtime, currentMotion: { value: '' }, lastGesture: 'tap', fades }
@@ -109,6 +135,7 @@ export async function createPipelineSim(dir, {
     const clip = runtime?.clipOf(group, index)
     runtime?.beginSmoothReset(
       clip ? (fades?.transitions?.[clip] ?? fades?.default ?? undefined) : undefined,
+      clip,
     )
   })
 
@@ -117,6 +144,7 @@ export async function createPipelineSim(dir, {
     const m = loadMotion(dir, clip)
     active = { group, index, clip, t: 0, loop: !!m.Meta.Loop, duration: m.Meta.Duration }
     emitLog(`[start] ${now.toFixed(2)} ${clip}${group === runtime.idleGroup ? '(idle)' : ''} idleIndex=${orch?.idleIndex}`)
+    frameTrace.event('motionStart', { time: now, group, index, clip })
     // motionStart 事件经总线按 mount.js 注册顺序分发
     stubModel.internalModel.motionManager.emit('motionStart', group, index)
   }
@@ -124,6 +152,7 @@ export async function createPipelineSim(dir, {
     const clip = active.clip
     active = null
     emitLog(`[finish] ${now.toFixed(2)} ${clip}`)
+    frameTrace.event('motionFinish', { time: now, clip })
     stubModel.internalModel.motionManager.emit('motionFinish')
   }
 
@@ -135,6 +164,8 @@ export async function createPipelineSim(dir, {
   }
   const orch = new DragOrchestrator(stubModel, l2d, ctx.actions.playLuaAction)
   orch.debugHook = debugHook
+  // type 10 动作链的归一化进度查 clip 时长（mount.js 同款注入）
+  orch.clipDurationOf = (clip) => interaction.clips?.[clip]?.duration
   ctx.orch = orch
   runtime.checkEnable = (n) => orch.checkEnablePlay(n)
   stubModel.internalModel.motionManager.on('motionStart', (g, i) =>
@@ -144,7 +175,7 @@ export async function createPipelineSim(dir, {
   // ---- 帧循环 ----
   let idleFallbackCooldown = 0
   function step() {
-    now += dt
+    now = clock.advance(dt)
     orch.step(dt)
     if (active) {
       // 库内每帧：beforeMotionUpdate(applySmoothReset + restoreLayer) -> 曲线 -> afterMotionUpdate(applyLayer)——与 mount.js 注册序一致
@@ -170,6 +201,7 @@ export async function createPipelineSim(dir, {
         idleFallbackCooldown = idleCooldown // 仿库内回落节流
       }
     }
+    frameTrace.frame({ time: now, dt, active, runtime, orch, values })
   }
 
   const flush = () => new Promise((r) => setImmediate(r))
@@ -190,6 +222,8 @@ export async function createPipelineSim(dir, {
     stubModel, settings, interaction, l2d,
     runtime, orch, ctx, actions: ctx.actions,
     motionLog, loadMotion, sampleCurve, flush,
+    trace: frameTrace,
+    clock,
     step, clickZone, playSeconds,
     now: () => now,
   }

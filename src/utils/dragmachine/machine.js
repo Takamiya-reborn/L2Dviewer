@@ -11,6 +11,7 @@
  * | actionListIndex | onDown(type3)/applyTrigger 推进回绕/onListenerEvent 命中/loadSaved | reset / clearData |
  * | triggerActionTime | onDown 归零；type 1/4 累加（触发不清零，防重发靠双闸 DD:246） | reset |
  * | extendActionFlag | type12 handler 置真（一次性） | reset |
+ * | animationPlayApply | type10 handler 闩锁（state 命中触发后置真）；state 离开清 | reset |
  * | offsetDragX/Y/TargetX/Y | onMove 累加；commitDragBase 落账；updatePartsSnap 吸附覆盖；step(checkReset)/onIdleChanged/loadSaved/reset 回 startValue | 各自路径 + reset |
  * | relations[].value/velocity/enable | updateRelations 每帧 | reset |
  * 按压锁 machineAble 属主在编排器（orchestrator.pressLock），本文件禁止直改。
@@ -128,6 +129,7 @@ export class DragMachine {
     this.nextTriggerTime = 0 // 触发冷却
     this.isTriggerAtion = false // 动作已触发未播完标记（游戏 isTriggerAtion）
     this.extendActionFlag = false // type 12 扩展门置位（游戏 extendActionFlag）
+    this.animationPlayApply = false // type 10 动作链单次闩锁（游戏 animationPlayApply）
     this.offsetDragX = this.startValue
     this.offsetDragY = this.startValue
     this.offsetDragTargetX = this.startValue
@@ -162,8 +164,9 @@ export class DragMachine {
     return !this.isTriggerAtion
   }
 
-  /** type 2/6/9 点击触发：checkClickAction 判定成功后由 step 调到（clickTriggerTime 到期窗口内）。播放 action（白名单检查在编排器 playAction 里）并应用 activeData；无 action 的机器只做 target 切换。
-   * type 9 在触发前先查他参是否贴近 num（±0.05，游戏 EVENT_GET_PARAMETER 回调），不贴近则白点。 */
+  /** type 2/6/9/11 点击触发：checkClickAction 判定成功后由 step 调到（clickTriggerTime 到期窗口内）。播放 action（白名单检查在编排器 playAction 里）并应用 activeData；无 action 的机器只做 target 切换。
+   * type 9 在触发前先查他参是否贴近 num（±0.05，游戏 EVENT_GET_PARAMETER 回调），不贴近则白点。
+   * type 11 同读他参现值但按区间放行（DD:1028-1043：num[0] ≤ 值 < num[1] 才触发）；num 缺省回落 action_list 当前项（与 type 1 同款的 updateTrigger 前置取值）。 */
   applyClickTrigger() {
     this.clickTriggerTime = null
     // 不广播 DRAG_CLICK：游戏 checkClickAction 成功回调的 onEventNotice（ON_ACTION_DRAG_CLICK）实参恒为 nil（live2d.lua CT:269/305 slot5(slot12)，slot12 从未赋值），监听层永远收不到——click_cd 冷却与 listener_data type 2 在原文是死路径，本地三模型配置也零使用
@@ -175,6 +178,19 @@ export class DragMachine {
       if (v == null || Math.abs((at.num ?? 0) - v) > 0.05) {
         this.orch.debug?.(
           `${this.parameterName} type9 他参 ${at.parameter}=${v?.toFixed?.(2) ?? v} 未贴近 ${at.num}，不触发`,
+        )
+        return
+      }
+    }
+    if (at?.type === 11) {
+      const item = Array.isArray(at.action_list)
+        ? at.action_list[Math.min(Math.max(this.actionListIndex, 1), at.action_list.length) - 1]
+        : null
+      const num = at.num ?? item?.num
+      const v = this.orch.readParameter(at.parameter ?? this.parameterName)
+      if (num == null || v == null || !(num[0] <= v && v < num[1])) {
+        this.orch.debug?.(
+          `${this.parameterName} type11 他参 ${at.parameter}=${v?.toFixed?.(2) ?? v} 不在区间 [${num?.[0]},${num?.[1]})，不触发`,
         )
         return
       }
@@ -342,7 +358,7 @@ export class DragMachine {
     // 按压锁：原文只有无 down 配置的点击型在 checkClickAction firstActive 上锁（DD:1408-1410）；down 配置型按下即触发不上锁，type 3/8 的锁在各自 handler 分支里
     // 锁时机比原文（下一帧 updateTrigger）提前到按下同步，语义等价——本移植 onDown 没有 updateTrigger 帧
     const atDown = this.actionTrigger
-    if (atDown && (atDown.type === 2 || atDown.type === 6 || atDown.type === 9) && !atDown.down) {
+    if (atDown && (atDown.type === 2 || atDown.type === 6 || atDown.type === 9 || atDown.type === 11) && !atDown.down) {
       this.orch.pressLock(`按下 ${this.drawAbleName}`, true)
     }
     // down 型触发：按下即排程（游戏 checkClickAction 的 firstActive 分支）
@@ -384,8 +400,8 @@ export class DragMachine {
     const dy = Math.abs(pos.y - this._downPos.y) < CLICK_RADIUS
     const quick = now - this._downTime < CLICK_TIME
     const at = this.actionTrigger
-    // 走 checkClickAction 点击判定的类型（2 点击 / 6 连点 / 9 点参）；其余类型松手只收尾（游戏里它们的 updateTrigger 分支不调 checkClickAction）
-    const clickJudged = at?.type === 2 || at?.type === 6 || at?.type === 9
+    // 走 checkClickAction 点击判定的类型（2 点击 / 6 连点 / 9 点参 / 11 点区间）；其余类型松手只收尾（游戏里它们的 updateTrigger 分支不调 checkClickAction）
+    const clickJudged = at?.type === 2 || at?.type === 6 || at?.type === 9 || at?.type === 11
     // 反应动作播放中点击不触发；例外是 focus=1 且播的正是本机动作（游戏 checkClickAction：未播放恒可点，播放中仅上述例外）
     const clickAllowed = this.orch.isPlaying
       ? at?.focus === 1 && this.orch.playActionName === at.action
@@ -498,7 +514,8 @@ export class DragMachine {
         !this.warned &&
         this.actionTrigger.type !== 2 &&
         this.actionTrigger.type !== 6 &&
-        this.actionTrigger.type !== 9
+        this.actionTrigger.type !== 9 &&
+        this.actionTrigger.type !== 11
       ) {
         this.warned = true
         console.warn(`[l2d] ship_l2d ${this.id}（${this.drawAbleName}）触发类型 ${this.actionTrigger.type} 未实现，已忽略`)
@@ -595,11 +612,15 @@ export class DragMachine {
   interactable() {
     const at = this.actionTrigger
     if (!at?.type) return true // 纯拖拽机：按住即响应
-    // 按住型（3 长按播表 / 4 双轴邻域 / 8 充能）：不冷却不单触发滞留即可响应
-    if (at.type === 3 || at.type === 4 || at.type === 8) {
+    // 按住型（1 拖拽邻域计时 / 3 长按播表 / 4 双轴邻域 / 8 充能）：不冷却不单触发滞留即可响应——type 1 的邻域门槛靠拖拽达成，按压本身恒可发起
+    if (at.type === 1 || at.type === 3 || at.type === 4 || at.type === 8) {
       return !(this.nextTriggerTime > 0 || this.isTriggerAtion)
     }
-    if (at.type !== 2 && at.type !== 6 && at.type !== 9) return null
+    if (at.type !== 2 && at.type !== 6 && at.type !== 9 && at.type !== 11) {
+      // type 10 动作链是纯自动触发（idle 变体过点联动播），不构成用户可点判定——按"被挡"参与分区聚合，不当未实现计橙
+      if (at.type === 10) return false
+      return null
+    }
     if (this.nextTriggerTime > 0 || this.isTriggerAtion) return false
     // 反应播放中仅 focus=1 且播的正是本机动作时可点（checkClickAction 语义，数组 action 与游戏一致按不等处理）
     if (this.orch.isPlaying && !(at.focus === 1 && this.orch.playActionName === at.action)) {
@@ -609,6 +630,15 @@ export class DragMachine {
     if (at.type === 9) {
       const v = this.orch.readParameter(at.parameter ?? this.parameterName)
       if (v == null || Math.abs((at.num ?? 0) - v) > 0.05) return false
+    }
+    // type 11 点区间：他参现值不在 num 区间时白点（与 applyClickTrigger 同判据）
+    if (at.type === 11) {
+      const item = Array.isArray(at.action_list)
+        ? at.action_list[Math.min(Math.max(this.actionListIndex, 1), at.action_list.length) - 1]
+        : null
+      const num = at.num ?? item?.num
+      const v = this.orch.readParameter(at.parameter ?? this.parameterName)
+      if (num == null || v == null || !(num[0] <= v && v < num[1])) return false
     }
     // 重复 idle 豁免：目标 idle 与当前相同且未开 repeat_flag 时整个触发跳过
     const idle = this.actionTriggerActive?.idle
@@ -639,6 +669,7 @@ export class DragMachine {
     this.parameterToStart = null
     this.isTriggerAtion = false
     this.extendActionFlag = false
+    this.animationPlayApply = false
     this.nextTriggerTime = 0
     // 平滑状态一并归位：松手路径会把 parameterSmoothTime 留在 smoothRevert，复位后若不还原，下次触发用回弹时长插值（跨域残留）
     this.parameterSmoothTime = this.smooth

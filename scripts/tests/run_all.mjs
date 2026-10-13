@@ -1,4 +1,4 @@
-// 测试入口：串行跑 scripts/tests 下全部 test_*.mjs，按退出码汇总。
+// 测试入口：串行跑 unit/ 与 asset/ 下的全部 test_*.mjs（unit 先跑——合成配置的纯逻辑快，asset 依赖真实模型），按退出码汇总。
 // 用法：node scripts/tests/run_all.mjs [名字子串...] [--fail-fast|-f]（从仓库根目录跑，各测试按相对路径读 models/、public/libs）。
 // 各测试的 SUMMARY pass=N fail=M 行被解析进汇总；没打的显示 —。
 import fs from 'fs'
@@ -11,10 +11,14 @@ const args = process.argv.slice(2)
 const failFast = args.includes('--fail-fast') || args.includes('-f')
 const filter = args.filter((s) => !s.startsWith('-'))
 
-const all = fs
-  .readdirSync(here)
-  .filter((f) => /^test_.*\.mjs$/.test(f))
-  .sort()
+// 子目录序即执行序：unit（合成配置）/ asset（真实模型资产）
+const all = ['unit', 'asset'].flatMap((dir) =>
+  fs
+    .readdirSync(path.join(here, dir))
+    .filter((f) => /^test_.*\.mjs$/.test(f))
+    .sort()
+    .map((f) => `${dir}/${f}`),
+)
 const tests = all.filter((f) => filter.every((s) => f.includes(s)))
 
 if (!tests.length) {

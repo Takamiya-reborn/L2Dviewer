@@ -1,9 +1,10 @@
 /**
  * 交互点可视化提示（测试用）：每个命中区一个半透明圆点标在其 drawable 网格顶点质心，外加网格实际形状的绿框轮廓（= 游戏 CubismRaycaster 的精确判定范围，与 meshHitTest 同一几何）。
- * 只画当前可交互的分区（绿）；被挡下（冷却/单触发已播/播放中）、未实现触发类型、隐藏网格（如菜单收起时的菜单项）一律不画；位置每帧跟随模型，状态变化（冷却结束/变体切换）时点随之隐现。
+ * 只画当前可交互的分区（绿）；被挡下（冷却/单触发已播/播放中）、未实现触发类型、无机器的隐藏网格一律不画；机器分区的隐藏网格照画（游戏路由纯几何射线，隐藏但在位的标记照样可触发）；画布内采不到落脚点的出画/被盖分区同样不画（出屏分区游戏里物理上点不到）；位置每帧跟随模型，状态变化（冷却结束/变体切换）时点随之隐现。
  * 可交互判定按真实路由分家：机器分区（ship_l2d 有 draw_able_name 匹配）由拖拽参数机接管，不查 interaction.json 的参数门控——可见性按机器自身的可触发条件（冷却/单触发/播放中/重复 idle 豁免/type 9 点参档位，取编排器路由到的那台，与游戏 GetDragPart 的"注册顺序第一台赢"一致）判定；无机器的分区（touch_head/body 等 C# 路径）才按起播门控（canPlay）判定。
  * 标签显示分区驱动的参数（编排器 l2d.json 的 draw_able_name -> parameter），不用网格自己的名字：部分皮肤的网格名与反应编号是错位的（shengluyisi_5: TouchDrag23 网格驱动 touch_drag25、TouchDrag25 驱动 touch_drag29——游戏 sharecfg ship_l2d 原始数据即如此），按网格名标注会把 drag25 的范围/中心画到 TouchDrag25 网格上，与实际驱动参数对不上。
  * 多台机器共用同一分区时参数用 "+" 连接，无机器的分区（摸头/普通触摸等）沿用网格名；标签整体走紧凑记法（hintText）：剥 touch_/Param 前缀、同族参数只写数字差。
+ * 判定引导环：type 11 区间机的判定参数被在播动作扫描时，在判定分区质心叠两层背景圆盘——外盘静止、内盘随扫描值向中心芯收缩（游戏 UI 引导层的同角色复刻，常显不随"显示交互点"开关），内盘边色 = 现值所在区间段。
  */
 import { Container, Graphics, Text } from 'pixi.js'
 import { boundaryEdges, boundaryLoops, meshHitTest } from './hitTest.js'
@@ -26,69 +27,155 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
   /** 分区质心路由缓存：key = idle 变体|在播动作，变了才整体重算——meshHitTest 全 drawable 遍历太重，不能每帧×每分区跑；姿态在变体间漂移小，够诊断用 */
   let routeKey = null
   const routeMap = new Map()
+  /** 判定引导环图层（常显，挂 stage 不随"显示交互点"开关——是玩法引导不是诊断工具）与逐门动效状态（value/lastMoveT/alpha/color） */
+  let ringG = null
+  const ringState = new Map()
+  let ringClock = 0
+  /** 引导环逐门读数（HUD 诊断）：update 每帧重写，记录 α/锚点/未画原因 */
+  let ringReads = []
+  // 外盘半径（扫描起点）与中心芯半径（扫描终点），px；区间段序调色板（现值落在哪段就取哪段色）
+  const RING_R0 = 84
+  const RING_CORE = 16
+  const RING_COLORS = [0x4fc08d, 0xe8b06f, 0x6fa8dc, 0xd98fb5]
 
-  /** 点 (x,y)（舞台坐标）按手势同款规则路由到的机器分区（= drawable 索引最大的命中，游戏 GetDragPart 反汇编语义：raycast 结果逐个查 dragParts 命中即覆写 → 末位命中赢）：'' = 该点没有可交互机器分区 */
+  /** 点 (x,y)（舞台坐标）按手势同款规则路由到的机器分区：命中分区里 ship_l2d 名单序最大者胜（游戏 GetDragPart 反汇编语义：遍历 raycast 命中逐个 FindIndex 取 running max，同 gestures.js 的 machineZonesAt，纯几何无透明度过滤），并列取先遇者：'' = 该点没有可交互机器分区 */
   function routeWinner(runtime, orch, x, y) {
     const hits = meshHitTest(runtime.model, x, y)
-    const core = runtime.model.internalModel.coreModel
     const areas = runtime.model.internalModel.hitAreas ?? {}
-    const hasOpacity = typeof core.getDrawableOpacity === 'function'
     let found = ''
+    let bestOrder = -1
     for (const name of hits) {
-      if (!orch.machineByZone(name)) continue
-      const area = areas[name]
-      if (area?.index === undefined) continue
-      if (!hasOpacity || core.getDrawableOpacity(area.index) > 0.001) found = name
+      const order = orch.zoneOrder(name)
+      if (order < 0) continue
+      if (areas[name]?.index === undefined) continue
+      if (order > bestOrder) {
+        bestOrder = order
+        found = name
+      }
     }
     return found
   }
 
-  /** 质心路由 + 露出点重定位：质心被其它分区盖住（winner ≠ 本分区）或质心在画布外（背景板级网格只露一角）时，采样本分区网格上仍路由回本分区的点搬过去。
-   * 候选两路：
-   * ① 边界环边中点（每环上限 24 点——必落在网格内，小网格的露出边靠它）；
-   * ② ①全军覆没时按画布 12×12 网格补采——巨大网格（如 4374×4000 的背景板）的边界环几乎整圈在画布外或整圈被盖，可视区内的露出区只有网格采样兜得住。
-   * 两路候选都只收画布内的点：画布外的露出点物理上点不到，搬过去等于没搬。
-   * 取最远而非首个，让被盖分区的点尽量离开盖住它的热区（盖住者就环在质心附近，最远暴露边缘天然远离它们）。
-   * 采样只在路由缓存重算时跑。返回 { winner, pt }（pt = 露出点全局坐标，null = 画布内整网格被盖死无露出区） */
-  function resolveRoute(runtime, orch, name, loops, verts, g, W, H) {
-    const inView = (p) => p.x >= 0 && p.y >= 0 && p.x <= W && p.y <= H
-    const winner = routeWinner(runtime, orch, g.x, g.y)
-    if (winner === name && inView(g)) return { winner, pt: null }
-    const model = runtime.model
-    let best = null
-    let bestDist = -1
-    const consider = (p) => {
-      if (!inView(p) || routeWinner(runtime, orch, p.x, p.y) !== name) return
-      const d = (p.x - g.x) ** 2 + (p.y - g.y) ** 2
-      if (d > bestDist) {
-        bestDist = d
-        best = p
+  /** 点 (x,y) 是否在三角形内（含边界，同号判定）：本分区网格点测用 */
+  function pointInTri(px, py, ax, ay, bx, by, cx, cy) {
+    const d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by)
+    const d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy)
+    const d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay)
+    return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))
+  }
+
+  /** 点 p 在三角形 (a,b,c) 里的重心坐标 [α,β,γ]（α 对应 a），退化三角形返回 null */
+  function baryOf(px, py, ax, ay, bx, by, cx, cy) {
+    const e1x = bx - ax
+    const e1y = by - ay
+    const e2x = cx - ax
+    const e2y = cy - ay
+    const det = e1x * e2y - e2x * e1y
+    if (Math.abs(det) < 1e-9) return null
+    const ex = px - ax
+    const ey = py - ay
+    const beta = (ex * e2y - e2x * ey) / det
+    const gamma = (e1x * ey - ex * e1y) / det
+    return [1 - beta - gamma, beta, gamma]
+  }
+
+  /** 落点挂载：找包含它的三角形记重心坐标（边界点取首个命中），挂不上（凹形网格质心落在网格外等）返回 null，调用方退化为每帧钉质心 */
+  function attachTri(lp, verts, indices) {
+    for (let t = 0; t < indices.length; t += 3) {
+      const ax = verts[indices[t] * 2]
+      const ay = verts[indices[t] * 2 + 1]
+      const bx = verts[indices[t + 1] * 2]
+      const by = verts[indices[t + 1] * 2 + 1]
+      const cx = verts[indices[t + 2] * 2]
+      const cy = verts[indices[t + 2] * 2 + 1]
+      if (pointInTri(lp.x, lp.y, ax, ay, bx, by, cx, cy)) {
+        const bary = baryOf(lp.x, lp.y, ax, ay, bx, by, cx, cy)
+        return bary ? { t: t / 3, bary } : null
       }
     }
-    if (loops) {
-      for (const loop of loops) {
-        const step = Math.max(1, Math.floor(loop.length / 24))
-        for (let i = 0; i < loop.length; i += step) {
-          const a = loop[i]
-          const b = loop[(i + 1) % loop.length]
-          consider(
-            model.toGlobal({
-              x: (verts[a * 2] + verts[b * 2]) / 2,
-              y: (verts[a * 2 + 1] + verts[b * 2 + 1]) / 2,
-            }),
-          )
-        }
-      }
-      if (!best) {
-        const N = 12
-        for (let i = 0; i <= N; i++) {
-          for (let j = 0; j <= N; j++) {
-            consider({ x: (W * i) / N, y: (H * j) / N })
+    return null
+  }
+
+  /** 露出点重定位：提示点钉到"按下去真能触发本分区"的画布内位置。
+   * 巨大网格（如 4374×4000 的背景板）顶点稀疏，全顶点质心会落在画布边缘的露出死角，不代表实际交互区，锚点按"画布内可见网格区"取：
+   * ① 画布 12×12 采样点做本分区三角形的点测（只遍历本分区三角形），命中的 = 可见网格区，其质心即锚点；
+   * ② 采样网格会漏低细露出区（细条带），边界环边中点兜底（必在网格上）。
+   * 完全可见（全部顶点在画布内）且质心可路由的分区免采样，直接钉全顶点质心（位置精确）。
+   * 候选按离锚点距离升序逐个做路由验证（机器分区：名单序路由回本分区；无机器分区：落在网格上即可点），第一个通过即返回——最近的可触发点，可路由区全被盖死才扫完。
+   * 候选只收画布内的点：画布外的露出点物理上点不到，搬过去等于没搬。
+   * 逐顶点变换与路由采样只在路由缓存重算时跑。返回落脚点的挂载信息：{ t, bary } = 三角形 t 的重心坐标（调用方每帧按当前顶点插值，点随呼吸/动作形变走）；{ centroid: true } = 每帧钉全顶点质心；null = 画布内采不到（整网格出画/可路由区全被盖死） */
+  function resolveRoute(runtime, orch, name, loops, verts, indices, g, W, H, byRoute) {
+    const inView = (p) => p.x >= 0 && p.y >= 0 && p.x <= W && p.y <= H
+    const model = runtime.model
+    // 全顶点转全局（缓存重算时一次，巨大网格可接受），顺带统计画布内顶点数
+    const nv = verts.length / 2
+    const gv = new Array(nv)
+    let nIn = 0
+    for (let j = 0; j < nv; j++) {
+      const p = model.toGlobal({ x: verts[j * 2], y: verts[j * 2 + 1] })
+      gv[j] = p
+      if (inView(p)) nIn++
+    }
+    if (!nIn) return null
+    // 完全可见：质心可路由就钉质心（免采样，每帧重算跟随形变）；质心被盖（名单序被压过）走下面的采样
+    if (nIn === nv && (!byRoute || routeWinner(runtime, orch, g.x, g.y) === name)) {
+      return { centroid: true }
+    }
+    // 候选：画布采样点里落在本分区网格上的（可见网格区，记命中三角形下标）
+    const pts = []
+    const N = 12
+    for (let i = 0; i <= N; i++) {
+      for (let j = 0; j <= N; j++) {
+        const x = (W * i) / N
+        const y = (H * j) / N
+        for (let t = 0; t < indices.length; t += 3) {
+          const a = gv[indices[t]]
+          const b = gv[indices[t + 1]]
+          const c = gv[indices[t + 2]]
+          if (pointInTri(x, y, a.x, a.y, b.x, b.y, c.x, c.y)) {
+            pts.push({ x, y, t: t / 3 })
+            break
           }
         }
       }
     }
-    return { winner, pt: best }
+    // 采样网格漏掉的低细露出区：边界环边中点兜底（必在网格上），记模型空间坐标供挂载
+    if (loops) {
+      for (const loop of loops) {
+        const step = Math.max(1, Math.floor(loop.length / 24))
+        for (let i = 0; i < loop.length; i += step) {
+          const va = loop[i]
+          const vb = loop[(i + 1) % loop.length]
+          const p = {
+            x: (gv[va].x + gv[vb].x) / 2,
+            y: (gv[va].y + gv[vb].y) / 2,
+            lp: {
+              x: (verts[va * 2] + verts[vb * 2]) / 2,
+              y: (verts[va * 2 + 1] + verts[vb * 2 + 1]) / 2,
+            },
+          }
+          if (inView(p)) pts.push(p)
+        }
+      }
+    }
+    if (!pts.length) return null
+    // 锚点 = 可见网格区质心；候选按离锚点升序逐个路由验证，第一个通过即返回
+    let sx = 0
+    let sy = 0
+    for (const p of pts) {
+      sx += p.x
+      sy += p.y
+    }
+    const ax = sx / pts.length
+    const ay = sy / pts.length
+    pts.sort((a, b) => (a.x - ax) ** 2 + (a.y - ay) ** 2 - ((b.x - ax) ** 2 + (b.y - ay) ** 2))
+    for (const p of pts) {
+      if (byRoute && routeWinner(runtime, orch, p.x, p.y) !== name) continue
+      // 挂到三角形上（模型空间定住重心坐标，形变由插值吸收）；挂不上（凹形网格落点在网格外等）退化为每帧钉质心
+      const lp = p.lp ?? model.toLocal(p)
+      return attachTri(lp, verts, indices) ?? { centroid: true }
+    }
+    return null
   }
 
   /** 分区名（hitArea Name，如 touch_drag23）-> 驱动参数名（如 touch_drag25）。
@@ -124,6 +211,88 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
     return `${short(zone)}:${items.join('+')}`
   }
 
+  /** 判定引导环（游戏 UI 引导层的同角色复刻，常显不随"显示交互点"开关——是玩法引导不是诊断工具）：两层背景圆盘 + 中心芯，叠在判定分区网格质心。
+   * 外盘静止在扫描起点半径；内盘随门参数现值从外盘半径向芯收缩，玩家按内盘沿的收紧节奏点判定分区；段界另画细环；内盘边色 = 现值所在区间段（段序调色板）；扫描停 ~0.25s 淡出。
+   * 半径对值线性（lo→外盘、hi→芯）；门数据取编排器 gateInfo 的归并门；锚 = 分区 drawable 顶点质心（单网格逐帧变换，中心出画跳过）。 */
+  function drawJudgeRings(runtime) {
+    ringReads = []
+    const gates = getOrch?.()?.gateInfo?.() ?? []
+    if (!gates.length) {
+      ringReads.push({ zone: '-', why: '无type11门' })
+      ringG.visible = false
+      return
+    }
+    const now = performance.now() / 1000
+    const dt = Math.min(0.1, Math.max(0, now - ringClock)) || 0.016
+    ringClock = now
+    const W = app.screen.width
+    const H = app.screen.height
+    ringG.visible = true
+    ringG.clear()
+    for (const g of gates) {
+      const key = `${g.zone}|${g.param}`
+      const st = ringState.get(key) ?? { lastValue: null, lastMoveT: 0, alpha: 0, color: RING_COLORS[0] }
+      ringState.set(key, st)
+      if (g.value == null) {
+        ringReads.push({ zone: g.zone, why: '无值' })
+        continue
+      }
+      if (st.lastValue != null && Math.abs(g.value - st.lastValue) > 1e-4) st.lastMoveT = now
+      st.lastValue = g.value
+      const active = now - st.lastMoveT < 0.25
+      st.alpha += ((active ? 1 : 0) - st.alpha) * Math.min(1, dt * 8)
+      if (st.alpha < 0.02) {
+        ringReads.push({ zone: g.zone, v: g.value, a: st.alpha, why: '停扫' })
+        continue
+      }
+      const h = hints.find((e) => e.name === g.zone)
+      if (!h) {
+        ringReads.push({ zone: g.zone, why: '无分区' })
+        continue
+      }
+      const verts = runtime.model.internalModel.getDrawableVertices(h.idx)
+      let cx = 0
+      let cy = 0
+      for (let j = 0; j < verts.length; j += 2) {
+        cx += verts[j]
+        cy += verts[j + 1]
+      }
+      const p = runtime.model.toGlobal({ x: cx / (verts.length / 2), y: cy / (verts.length / 2) })
+      if (p.x < 0 || p.y < 0 || p.x > W || p.y > H) {
+        ringReads.push({ zone: g.zone, v: g.value, a: st.alpha, x: p.x, y: p.y, why: '锚点出画' })
+        continue
+      }
+      ringReads.push({ zone: g.zone, v: g.value, a: st.alpha, x: p.x, y: p.y, why: null })
+      const span = g.hi - g.lo
+      const k = span > 0 ? Math.max(0, Math.min(1, (g.value - g.lo) / span)) : 0
+      const hit = g.bands.findIndex((b) => g.value >= b.lo && g.value < b.hi)
+      if (hit >= 0) st.color = RING_COLORS[hit % RING_COLORS.length]
+      const r = RING_R0 + (RING_CORE - RING_R0) * k
+      // 外盘（静止背景层）：扫描起点半径
+      ringG.beginFill(0xffffff, 0.1 * st.alpha)
+      ringG.drawCircle(p.x, p.y, RING_R0)
+      ringG.endFill()
+      ringG.lineStyle(1, 0xffffff, 0.25 * st.alpha)
+      ringG.drawCircle(p.x, p.y, RING_R0)
+      // 段界细环：内盘沿收进哪段一目了然
+      ringG.lineStyle(1, 0xffffff, 0.3 * st.alpha)
+      for (const b of g.bands) {
+        if (b.lo <= g.lo) continue
+        ringG.drawCircle(p.x, p.y, RING_R0 + (RING_CORE - RING_R0) * ((b.lo - g.lo) / span))
+      }
+      // 内盘（收缩层）：现值所在半径，边色取段色
+      ringG.beginFill(0xffffff, 0.16 * st.alpha)
+      ringG.drawCircle(p.x, p.y, r)
+      ringG.endFill()
+      ringG.lineStyle(2, st.color, 0.9 * st.alpha)
+      ringG.drawCircle(p.x, p.y, r)
+      // 中心芯（静止）：扫描终点
+      ringG.beginFill(0x86e3de, 0.85 * st.alpha)
+      ringG.drawCircle(p.x, p.y, RING_CORE)
+      ringG.endFill()
+    }
+  }
+
   return {
     rebuild(model) {
       this.destroy()
@@ -140,7 +309,9 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         layer.addChild(dot, label)
         return { name, idx: area.index, dot, label }
       })
+      ringG = new Graphics()
       app.stage.addChild(layer)
+      app.stage.addChild(ringG)
     },
 
     destroy() {
@@ -149,17 +320,29 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         layer.destroy({ children: true })
         layer = null
       }
+      if (ringG) {
+        app.stage.removeChild(ringG)
+        ringG.destroy()
+        ringG = null
+      }
       hints = []
       loopCache = new Map()
       scratchPolys = new Map()
       routeMap.clear()
       routeKey = null
+      ringState.clear()
     },
 
     update() {
       if (!layer) return null
       const runtime = getRuntime()
-      if (!getVisible() || !runtime) {
+      if (!runtime) {
+        if (ringG) ringG.visible = false
+        layer.visible = false
+        return null
+      }
+      drawJudgeRings(runtime)
+      if (!getVisible()) {
         layer.visible = false
         return null
       }
@@ -169,18 +352,13 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
       // 提示层直挂 stage，坐标 = 舞台全局 = 画布 CSS px；可视区即画布矩形
       const W = app.screen.width
       const H = app.screen.height
-      // 越界点钳回画布内（12px 边距）：停机位/画外网格的质心常在画布外，点原样钉上去等于没画
-      const clampToView = (p) => ({
-        x: Math.min(Math.max(p.x, 12), W - 12),
-        y: Math.min(Math.max(p.y, 12), H - 12),
-      })
       for (const h of hints) {
         // 标签 = 分区驱动的参数（见函数注释），逐帧解析：编排器随模型热切换
         // 网格名与反应编号错位的皮肤（shengluyisi_5 的 TouchDrag14 驱动 touch_drag21 等）标签里参数前带上分区名，才对得回分区
         const orch = getOrch?.()
         const hasMachine = !!orch?.machinesForZone(h.name).length
-        // 不可交互一律不画：隐藏网格（透明度归零）与被挡下/未实现触发类型的分区直接跳过（连路由采样都省掉），画面上只剩当前真能点的分区
-        if (!hasOpacity || core.getDrawableOpacity(h.idx) <= 0.001) {
+        // 不可交互一律不画：机器分区不按透明度跳过（游戏路由是纯几何射线，隐藏但在位的标记照样可触发，见 gestures.js machineZonesAt 注释），被挡下/未实现触发类型的分区跳过；无机器分区才按隐藏网格跳过（C# 路径的命中层恒可见，此分支兜底摆位零件等）
+        if (!hasMachine && (!hasOpacity || core.getDrawableOpacity(h.idx) <= 0.001)) {
           h.dot.visible = h.label.visible = false
           continue
         }
@@ -208,36 +386,50 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
           loops = boundaryLoops(core.getDrawableVertexIndices(h.idx) ?? [])
           loopCache.set(h.idx, loops)
         }
-        // 遮挡/出画处理：质心处按手势同款规则路由到的不是本分区（大网格盖住小分区热区、末位命中赢下质心），或质心本身在画布外（背景板级网格只露一角）时，把提示点/标签搬到本分区网格上画布内可点到的位置（resolveRoute）
-        // 钉在被盖住的质心上这个分区永远点不到；画布内整网格被盖死无露出区则整只隐藏（只留可交互视图）
-        // 路由结果按 idle 变体/在播动作缓存，变了才重算
-        // 不追加"←胜者"文字标记：路由定案后点已搬走、质心空心环已作标记
+        // 网格三角形下标：重定位的可见区点测与非流形网格的逐边描边共用
+        const indices = core.getDrawableVertexIndices(h.idx) ?? []
+        // 遮挡/出画处理：提示点只钉在画布内的可触发位置（resolveRoute，锚点 = 画布内可见部分质心）。
+        // 机器分区一律重定位——巨大网格的全顶点质心可能落在画布边缘的露出死角，不代表实际交互区；质心被其它分区盖住（名单序被压过）时同样靠它搬点
+        // 无机器分区（摸头/普通触摸等 C# 路径，网格都在角色身上）只在质心出画时重定位，质心在画布内就钉质心
+        // 出屏分区游戏里物理上点不到（C# GetDragPart 的射线恒过 Input.mousePosition，屏幕内坐标），画布内采不到落脚点（整网格出画/可路由区全被盖死/非流形网格连不成环）则藏点与标签，绿框照画（画布内的露出部分仍可见）
+        // 路由结果按 idle 变体/在播动作缓存，变了才重算：缓存的是挂载信息（三角形重心坐标或质心锚），全局位置每帧随当前顶点重算，呼吸/动作形变时点跟着网格走；不追加"←胜者"文字标记：路由定案后点已搬走
         let spot = g
         let dotLost = false
-        if (orch?.machineByZone(h.name)) {
+        const isMachine = !!orch?.machineByZone(h.name)
+        const offView = g.x < 0 || g.y < 0 || g.x > W || g.y > H
+        if (isMachine || offView) {
           // 画布尺寸进键：resize 后搬点位置随可视区变化，旧值作废
-          const key = `${orch.idleIndex}|${orch.playActionName ?? ''}|${W}x${H}`
+          const key = `${orch?.idleIndex ?? ''}|${orch?.playActionName ?? ''}|${W}x${H}`
           if (routeKey !== key) {
             routeKey = key
             routeMap.clear()
           }
           if (!routeMap.has(h.name)) {
-            routeMap.set(h.name, resolveRoute(runtime, orch, h.name, loops, verts, g, W, H))
+            routeMap.set(h.name, resolveRoute(runtime, orch, h.name, loops, verts, indices, g, W, H, isMachine))
           }
           const r = routeMap.get(h.name)
-          // pt 在场就用（winner 命中但质心出画同样要搬回画布内）；无 pt 且被别的分区盖死 → 该点画布内点不到，整只隐藏（只留可交互视图）
-          if (r.pt) spot = r.pt
-          else if (r.winner !== h.name) dotLost = true
-        }
-        if (dotLost) {
-          h.dot.visible = h.label.visible = false
-          continue
+          if (!r) {
+            dotLost = true
+          } else if (r.bary) {
+            // 钉在网格面上（三角形重心坐标）：每帧按当前顶点插值，随呼吸/动作形变走，与绿框同一几何
+            const i3 = r.t * 3
+            const a = runtime.model.toGlobal({ x: verts[indices[i3] * 2], y: verts[indices[i3] * 2 + 1] })
+            const b = runtime.model.toGlobal({ x: verts[indices[i3 + 1] * 2], y: verts[indices[i3 + 1] * 2 + 1] })
+            const c = runtime.model.toGlobal({ x: verts[indices[i3 + 2] * 2], y: verts[indices[i3 + 2] * 2 + 1] })
+            spot = {
+              x: r.bary[0] * a.x + r.bary[1] * b.x + r.bary[2] * c.x,
+              y: r.bary[0] * a.y + r.bary[1] * b.y + r.bary[2] * c.y,
+            }
+          } else {
+            // 质心锚（完全可见且可路由/落点挂不上三角形）：每帧用当前顶点重算，同样跟随
+            spot = g
+          }
         }
         // 标签 = 分区驱动的参数（见 hintText 注释）：同名不重复、错位分区拼数字差（drag14:21），比全名短一个量级
         const text = hintText(h.name, params)
         if (h.label.text !== text) h.label.text = text
+        // 绿框恒画（含 dotLost）：出画/被盖只藏点与标签，网格露在画布内的部分仍是真实判定范围（= 游戏 CubismRaycaster 的判定几何），框必须可见；整网格出画时框画在画布外自然不可见
         h.dot.visible = true
-        h.label.visible = true
         h.dot.position.set(0, 0)
         h.dot.clear()
         // 走到这里的都是当前可交互的分区，恒绿
@@ -271,7 +463,6 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         } else {
           // 非流形网格连不成干净边界环：退化为逐条描边界边（boundaryEdges，只被一个三角形使用的边）——形状与环描边一致，只是没串成回路
           // 不做形状填充，统一只画绿框
-          const indices = core.getDrawableVertexIndices(h.idx) ?? []
           h.dot.lineStyle(1, color, 0.8)
           for (const [a, b] of boundaryEdges(indices)) {
             const pa = runtime.model.toGlobal({ x: verts[a * 2], y: verts[a * 2 + 1] })
@@ -280,18 +471,17 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
             h.dot.lineTo(pb.x, pb.y)
           }
         }
-        // 质心圆钉在 spot（露出点或质心，出画时钳回画布边缘留可视锚点）；重定位时在真实质心画一个空心小环留底；整网格被盖死的（dotLost）上面已整只隐藏
-        if (!dotLost) {
-          const spotC = clampToView(spot)
-          h.dot.beginFill(color, 0.35)
-          h.dot.drawCircle(spotC.x, spotC.y, 9)
-          h.dot.endFill()
-          if (spot !== g) {
-            h.dot.lineStyle(1, color, 0.5)
-            h.dot.drawCircle(g.x, g.y, 4)
-          }
-          h.label.position.set(spotC.x + 12, spotC.y - 7)
+        // 质心圆钉在 spot（画布内的可点位置，出画/被盖时已搬走）；真实质心不留痕（空心环会被当成第二个交互点的"幽灵点"），网格本尊的位置看绿框即可
+        // dotLost（出画/被盖且画布内采不到落脚点）只藏点与标签：物理上点不到的位置不画误导性的点，绿框上面已照画
+        if (dotLost) {
+          h.label.visible = false
+          continue
         }
+        h.label.visible = true
+        h.dot.beginFill(color, 0.35)
+        h.dot.drawCircle(spot.x, spot.y, 9)
+        h.dot.endFill()
+        h.label.position.set(spot.x + 12, spot.y - 7)
       }
       const state = [...runtime.statePids].map((pid) => [
         pid,
@@ -305,7 +495,7 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
             runtime.eps,
         )
         .map((pid) => [pid, runtime.node.get(pid)])
-      return { state, carried }
+      return { state, carried, rings: ringReads }
     },
   }
 }

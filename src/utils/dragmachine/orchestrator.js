@@ -35,6 +35,9 @@ export class DragOrchestrator {
     this.machineAble = false // 有机器按下期间屏蔽动作播放（游戏 EVENT_ACTION_ABLE）
     this.isPlaying = false
     this.playActionName = ''
+    this.playingClip = '' // 最近一次起播的 clip 名（含 idle 组——type 10 动作链的 state 名判据需要 idle clip 名，playActionName 只记反应动作）
+    this.playStartAt = 0 // playingClip 的起播时刻（performance 时钟，秒）——type 10 归一化播进度的起算点
+    this.clipDurationOf = null // (clipName) => 秒 | undefined，查 clip 时长；mount/sim 从 interaction.json clips 表注入，type 10 用
     this.machines = config.entries.map((e) => new DragMachine(e, this))
     // 读档：只恢复机器拖拽参数值。idle 变体号/白名单不跨会话恢复——存档里只有变体号、没有交互图状态（菜单摊开与否），单独恢复变体号会造出"菜单没开但 touch_idle1 被重复 idle 豁免跳过"的自不一致死态；游戏里两者是配套恢复的，这里拿不到后者就干脆都从干净态起步
     for (const m of this.machines) {
@@ -239,6 +242,8 @@ export class DragOrchestrator {
       // debug 读数：触发链关键步，debugHook 接线见 l2d/mount.js
       this.debug?.(
         `${machine.parameterName} 触发 ${action}` +
+          // type 10 的触发由 step 里归一化进度自动判定（DRAG_ANIMATION_PLAY），非点击路径
+          (machine.actionTrigger?.type === 10 ? '[type10自动] ' : '') +
           ` 播放${played ? '成功' : '失败'}` +
           (picked != null ? `(idle变体→${picked}已先切)` : '') +
           (Array.isArray(activeData?.enable)
@@ -335,6 +340,8 @@ export class DragOrchestrator {
     // 否则长按姿势播放中松手、收尾切 idle 的场合 isPlaying 永久滞留真值，全机 ignore_action 拒按 + 触发处理器 l2dIsPlaying 早退，交互整体锁死
     this.isPlaying = false
     this.playActionName = ''
+    this.playingClip = clipName
+    this.playStartAt = performance.now() / 1000
     // 最近一次起播是否 idle 组：noteMotionFinish 判定"反应动作播完"用（库的 motionFinish 事件不带 group 参数，只能在这里记）
     this._lastStartIdle = idle
     if (!idle) {
@@ -355,6 +362,7 @@ export class DragOrchestrator {
     const idle = this._lastStartIdle
     this.isPlaying = false
     this.playActionName = ''
+    this.playingClip = ''
     // 游戏 FinishAction 处理器（live2d.lua:666）尾部的 changeActionIdle：反应动作播完**显式** force 重播 "idle"——游戏没有"引擎随机回落"这回事，Unity Animator 由 "idle" 整数参数原子地选变体子状态；这里等价于 playLuaAction('idle')（组名路由会按 idleClipFor(idleIndex) 解析变体下标）
     // 引擎的 startRandomMotion 回落补丁只作兜底，变体选支以这条游戏本体的显式路径为准
     if (wasPlaying && name && !idle) this.playAction?.('idle')
@@ -453,6 +461,34 @@ export class DragOrchestrator {
     this.activeOwner = 0
   }
 
+  /** type 11 判定门读数：同分区同参数的多台机器归并为一道门，区间段按 num 排列并附目标动作；判定读的是模型实时值（applyClickTrigger 同源），不是机器记账值 */
+  gateInfo() {
+    const gates = []
+    for (const m of this.machines) {
+      const at = m.actionTrigger
+      if (at?.type !== 11) continue
+      const param = at.parameter ?? m.parameterName
+      let gate = gates.find((g) => g.zone === m.drawAbleName && g.param === param)
+      if (!gate) {
+        gate = { zone: m.drawAbleName, param, value: null, lo: Infinity, hi: -Infinity, bands: [] }
+        gates.push(gate)
+      }
+      const item = Array.isArray(at.action_list)
+        ? at.action_list[Math.min(Math.max(m.actionListIndex, 1), at.action_list.length) - 1]
+        : null
+      const num = at.num ?? item?.num
+      if (!num) continue
+      gate.lo = Math.min(gate.lo, num[0])
+      gate.hi = Math.max(gate.hi, num[1])
+      gate.bands.push({ lo: num[0], hi: num[1], action: at.action ?? item?.action ?? '' })
+    }
+    for (const g of gates) {
+      g.bands.sort((a, b) => a.lo - b.lo)
+      g.value = this.readParameter(g.param)
+    }
+    return gates
+  }
+
   /** HUD 读数：idle 变体号、白名单规模、按住中的机器、各机器参数实时值、relation 联动参数实时值。返回结构化数据（键值对组），展示层负责排版 */
   hudInfo() {
     const active = this.machines.find((m) => m._active)
@@ -484,6 +520,7 @@ export class DragOrchestrator {
       active: active ? active.drawAbleName : null,
       machines,
       relations,
+      gates: this.gateInfo(),
       // 触发链最近读数（副本：ticker 每帧调 hudInfo，避免展示层持同引用）
       tap: (this.tapLog ?? []).slice(-6),
     }

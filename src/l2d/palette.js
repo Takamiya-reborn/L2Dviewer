@@ -4,7 +4,9 @@
  * 游戏链路：touch_drag8 完结 → 路由 idle8 → state 覆写 BANZI=1 → moc3 关键帧点亮 8 个 texture_01 补丁件 = 调色板面板。
  * touch_drag11/12（染一组件）与 touch_drag13/14（染另一组）是 ±1 双向色轴，Core 关键帧色经 colorPatches 落到渲染。
  * 常规动作把这 4 个色轴钉在 0（默认方案），只有 idle8 不带这些曲线——游戏在面板打开期间由控制层直写参数。
- * 查看器同样在 afterMotionUpdate（主动作求值后、coreModel.update 前）落笔，选色跨动作保留。
+ * 查看器同样在 afterMotionUpdate（主动作求值后、coreModel.update 前）落笔，仅限在播动作曲线不驱动的轴：
+ * 曲线驱动的参数由动作求值逐帧直写（忍者扫描 touch_drag13 与色轴同参），控制层复写会盖掉动作值；
+ * 面板态 idle8 不驱动色轴，选色在该期间保留。
  */
 
 const AXIS_IDS = ['touch_drag11', 'touch_drag12', 'touch_drag13', 'touch_drag14']
@@ -27,11 +29,12 @@ export function installPalette(ctx, model) {
     const i = core.getParameterIndex(id)
     if (i >= 0) axes.push([id, i, core.getParameterMaximumValue(i), core.getParameterMinimumValue(i)])
   }
-  if (!axes.length) {
+  const panelIdx = core.getParameterIndex(PANEL_PARAM)
+  if (!axes.length || panelIdx < 0) {
+    // 面板参数不存在的皮肤没有调色板功能：AXIS_IDS 是按皮肤命名的色轴参数名，其他皮肤的同名参数各有所用，不能按参数名存在就误装
     ctx.palette = null
     return
   }
-  const panelIdx = core.getParameterIndex(PANEL_PARAM)
 
   ctx.palette = {
     values,
@@ -60,8 +63,13 @@ export function installPalette(ctx, model) {
     },
   }
 
-  // 常规动作把色轴钉回 0——每帧在动作求值后覆写为用户选色（与 ambient 层同一时序钩子）
+  // 落笔跳过在播动作曲线驱动的轴：动作求值逐帧直写这些参数，控制层复写会盖掉动作值。
+  // 驱动表按在播 clip 解析（attachMotions 全量预热），未预热（drivenIdxOf 返回 null）按无豁免全量落笔
   model.internalModel.on('afterMotionUpdate', () => {
-    for (const [id, i] of axes) core.setParameterValueByIndex(i, values[id])
+    const exempt = ctx.orch ? ctx.runtime?.drivenIdxOf(ctx.orch.playingClip) : null
+    for (const [id, i] of axes) {
+      if (exempt?.has(i)) continue
+      core.setParameterValueByIndex(i, values[id])
+    }
   })
 }

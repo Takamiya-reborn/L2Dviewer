@@ -39,36 +39,36 @@ export function createActions(ctx) {
     return i >= 0 ? i : undefined
   }
 
-  /** 重置交互状态（对应游戏 live2d.lua resetL2dData，其存档清理即 Live2dConst.ClearLive2dSave）：清存档、机器回初始值、idle 归零、白名单清空并重放基础 idle。主路径 = 整只重挂载（mount.js 注册的 ctx.remount），物理/机器/参数/idle 全部回到全新起点，moc 内的背景随之重现（游戏端背景是独立图层，不随复位）；无挂载环境（headless sim）退回就地硬复位链 */
+  /** 重置交互状态（游戏 live2d.lua resetL2dData 的就地复位语义，存档清理即 Live2dConst.ClearLive2dSave）：清存档、机器回初始值、idle 归变体 0、白名单清空并重播基础 idle。与游戏的差异：不做屏外出屏窗（游戏出屏窗后有独立场景层兜底；查看器背景板在 moc 内，藏模型=连背景一起黑）——基础参数走 beginSmoothReset 与重播 idle 同窗滑回，全程可见 */
   function resetInteraction() {
-    if (ctx.remount) {
-      // 挂载窗口内旧模型已销毁、新模型未就位，ctx.model 为空，再点直接忽略（游戏 LeanTween.isTweening 守卫的等价物）
-      if (!ctx.model) return
-      console.log('[l2d] 重置交互 -> 整只重挂载', ctx.modelUrl)
-      ctx.remount()
-      return
-    }
-    const orch = ctx.orch
     const model = ctx.model
-    if (!orch || !model) return
-    // 防重入：隐藏窗口内再点直接忽略
-    if (!model.visible) return
-    // 屏外复位窗口（游戏 offsetL2dPositonDelay 的等价实现）：隐藏模型，硬复位与重播在幕后完成，回显时参数已全部就位、姿态已渐入完毕，瞬跳不示人
-    model.visible = false
-    orch.resetAll()
+    if (!model) return
+    // 挂载进行中再点直接忽略（游戏 LeanTween.isTweening 守卫的等价物）
+    if (ctx._mounting) return
+    const orch = ctx.orch
+    if (!orch && !ctx.runtime) return
+    console.log('[l2d] 重置交互 -> 就地复位（游戏 resetL2dData 语义）')
+    // 基础 idle 的 clip 与转场时长（无参数机皮肤退回 fades 默认窗）
+    const clip = orch ? orch.idleClipFor(0) : null
+    const fade = clip
+      ? (ctx.fades?.transitions?.[clip] ?? ctx.fades?.default ?? 0.3)
+      : (ctx.fades?.default ?? 0.3)
+    // 清存档+机器回初始值+白名单清空（ClearLive2dSave + ResetL2dData）；机器加/乘分量同帧归零，被拖拽道具的回位是瞬跳（游戏同样瞬跳，只是藏在出屏窗里）
+    orch?.resetAll()
     // 先清图跟踪（pending 归空）：stopAllMotions 引出的 motionFinish 会对空挂起做 applyEnd(null) 幂等空转，不会把旧动作的结束值写回复位后的节点
     ctx.runtime?.resetState()
-    // 参数直写复位：循环 idle 永不 finish、currentGroup 常驻，"重播 idle -> motionStart -> resetParameters" 的间接链会被引擎 MotionState.reserve 以 "Motion is already playing" 拒绝、跑不起来；这里直写一次，再停掉在播动作让下面的重播能过 reserve
-    ctx.runtime?.resetParameters()
+    // 基础参数缓动滑回默认/节点值，与重播 idle 的渐入同窗；重播的 motionStart 会再开一次同窗复位（from 取当前值，幂等）
+    ctx.runtime?.beginSmoothReset(fade, clip)
+    // 循环 idle 永不 finish、currentGroup 常驻，重播须先停掉在播动作才能过引擎 MotionState.reserve
     model.internalModel.motionManager.stopAllMotions()
-    const clip = orch.idleClipFor(0)
-    playLuaAction(clip)
-    // 回显窗口 = 新 idle 的渐入时长（fades 表，与 mount 起播复位开窗同源）+ 少量沉降余量；表缺失走 0.3s 兜底（与 motionPatches 渐变兜底同值）
-    const fade = ctx.fades?.transitions?.[clip] ?? ctx.fades?.default ?? 0.3
-    setTimeout(() => {
-      // 窗口内模型可能已换新实例，只回显自己这一只
-      if (ctx.model === model) model.visible = true
-    }, fade * 1000 + 200)
+    // changeIdleIndex(0) + 强制重播基础 idle（游戏同款）
+    if (orch) playLuaAction(clip)
+    else {
+      model.internalModel.motionManager.startRandomMotion(
+        ctx.runtime.idleGroup,
+        MotionPriority.FORCE,
+      )
+    }
   }
 
   /**

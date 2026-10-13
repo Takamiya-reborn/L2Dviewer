@@ -31,8 +31,6 @@ watch(showRipple, (v) => localStorage.setItem('l2d.showClickRipple', v ? '1' : '
 // 调试信息（状态机 HUD 读数）独立于交互点开关；hud 为结构化数据
 const showDebug = ref(true)
 const hud = ref(null)
-// 当前皮肤是否配了拖拽参数机（决定"重置交互"按钮显隐；挂载时回填）
-const hasOrch = ref(false)
 
 let app = null
 let rippleCtl = null
@@ -46,7 +44,7 @@ let view = null
  *   由 motionPatches/camera/mount/gestures/hud 各模块读写；
  * - dragScale（拖拽标定，camera 写）与 lastGesture（手势判定，gestures 写）
  *   是跨模块传值；
- * - status/currentMotion/hud/showHints/hasOrch 是响应式桥（l2d/ 只透传
+ * - status/currentMotion/hud/showHints 是响应式桥（l2d/ 只透传
  *   .value，不 import vue）；fill/emit 回传组件侧的 props 与事件。
  */
 const ctx = {
@@ -64,7 +62,6 @@ const ctx = {
   status,
   currentMotion,
   hud,
-  hasOrch,
   fill: () => props.fill,
   emit,
 }
@@ -168,9 +165,10 @@ defineExpose({ play: (group) => ctx.actions.playMotion(group) })
 <template>
   <div class="stage">
     <div ref="canvasHost" class="canvas-host" />
-    <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :has-orch="hasOrch" :show-ripple="showRipple"
+    <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :show-ripple="showRipple"
       @toggle-hints="showHints = !showHints" @toggle-debug="showDebug = !showDebug"
-      @toggle-ripple="showRipple = !showRipple" @reset="actions.resetInteraction()" />
+      @toggle-ripple="showRipple = !showRipple"
+      @reset="actions.resetInteraction()" />
     <p v-if="status" class="status">{{ status }}</p>
   </div>
 </template>
