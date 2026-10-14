@@ -141,7 +141,12 @@ export function createActions(ctx) {
   function handleHitAreas(areas) {
     const runtime = ctx.runtime
     if (!runtime) return
-    const name = runtime.firstVisibleHit(areas, ctx.lastGesture)
+    // 机器注册名单内的分区不落反应路径：游戏 DragParts 与 TouchParts 两份名单分家，DragPart 的点按只经参数机（含冷却/按压锁/activeData），GetTouchPart 名单（摸头/普通触摸/特殊触摸）从不收录它们——否则参数机未消费的按压会从这条路径绕开机器状态直播动作
+    const orch = ctx.orch
+    const name = runtime.firstVisibleHit(
+      orch ? areas.filter((n) => orch.zoneOrder(n) < 0) : areas,
+      ctx.lastGesture,
+    )
     const played = name && runtime.playHitMotion(name)
     if (played) ctx.currentMotion.value = played.group
   }

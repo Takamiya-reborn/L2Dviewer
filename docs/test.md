@@ -53,7 +53,7 @@ scripts/tests/
 
 ### unit/test_interaction.mjs — 交互状态机
 
-**场景**：改 [src/utils/interaction/](../src/utils/interaction/)（runtime.js / hitTest.js / hints.js）后回归。fixture 复刻"touch_idle1 摊开菜单 → touch_idle2 分支（前置 caidan=1）→ touch_idle3 收尾带回 0"这条游戏内实况链路，覆盖：statePids/carryPids/gatedPids 派生、节点跟踪（pending 结算、被顶掉先行结算、idle 起播立即落账）、canPlay 门控（查节点不查实时参数）、firstVisibleHit 手势路由与透明度过滤、resetParameters/resetState、playHitMotion 精确命中与组内选支。需要 Cubism Core 在位（仅 import），缺文件时整支跳过。动作被顶掉、idle 起播立即结算以及参数复位窗口的行为也应与运行时保持一致。
+**场景**：改 [src/utils/interaction/](../src/utils/interaction/)（runtime.js / hitTest.js / hints.js）后回归。fixture 复刻两条游戏内实况链路："touch_idle1 摊开菜单 → touch_idle2 分支（起播 caidan=1）→ touch_idle3 收尾带回 0"与"touch_head 持有道具 glove（默认即满足）→ touch_head2 消耗 → touch_head3 产出"，覆盖：statePids/carryPids/gatedPids 派生（moc 默认给不出的前置不门控）、节点跟踪（pending 结算、被顶掉先行结算、idle 起播立即落账）、canPlay 门控（查节点不查实时参数）、firstVisibleHit 手势路由与透明度过滤、resetParameters/resetState、playHitMotion 精确命中与组内选支。需要 Cubism Core 在位（仅 import），缺文件时整支跳过。动作被顶掉、idle 起播立即结算以及参数复位窗口的行为也应与运行时保持一致。
 
 ### unit/test_render.mjs — 渲染参数层
 

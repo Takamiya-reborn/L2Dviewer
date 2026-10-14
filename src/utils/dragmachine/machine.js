@@ -12,7 +12,7 @@
  * | triggerActionTime | onDown 归零；type 1/4 累加（触发不清零，防重发靠双闸 DD:246） | reset |
  * | extendActionFlag | type12 handler 置真（一次性） | reset |
  * | animationPlayApply | type10 handler 闩锁（state 命中触发后置真）；state 离开清 | reset |
- * | offsetDragX/Y/TargetX/Y | onMove 累加；commitDragBase 落账；updatePartsSnap 吸附覆盖；step(checkReset)/onIdleChanged/loadSaved/reset 回 startValue | 各自路径 + reset |
+ * | offsetDragX/Y/TargetX/Y | onMove 累加；step 每 tick 落 target（游戏 updateDrag）；commitDragBase 落账；updatePartsSnap 吸附覆盖；step(checkReset)/onIdleChanged/loadSaved/reset 回 startValue | 各自路径 + reset |
  * | relations[].value/velocity/enable | updateRelations 每帧 | reset |
  * 按压锁 machineAble 属主在编排器（orchestrator.pressLock），本文件禁止直改。
  */
@@ -25,6 +25,9 @@ const CLICK_TIME = 0.5
 const CLICK_CONFIRM = 0.1
 /** 数值吸附死区：与目标差 <0.05 直接贴合（游戏 updateParameterValue） */
 const VALUE_EPS = 0.05
+/** 平滑进度推进速率：游戏端 stepParameter 挂 30Hz 定时器，平滑进度每 tick 只走 Time.fixedDeltaTime(0.02s)（live2ddrag.lua DD:824），即每秒走 0.02×30=0.6——配置 100ms 的平滑实际耗时约 167ms，这就是拖拽阻尼感的来源。写成速率×dt 的形式使任意帧率下耗时一致；localStorage l2d_fixedDt 可覆盖 fixedDeltaTime 便于实机对照（Node 单测无 localStorage，须 typeof 守卫） */
+const SMOOTH_RATE =
+  ((typeof localStorage !== 'undefined' && Number(localStorage.getItem('l2d_fixedDt'))) || 0.02) * 30
 
 /** Unity Mathf.SmoothDamp（maxSpeed 无穷）逐帧移植：relation_parameter 的联动参数用它平滑跟随拖动量，与线性 CustomSmoothValue 的手感不同——接近目标时先冲过再被阻尼拉回。vel 为速度状态（跨帧保持，存 relation 上）。 */
 function smoothDamp(current, target, vel, smoothTime, dt) {
@@ -369,14 +372,13 @@ export class DragMachine {
 
   onMove(pos) {
     if (!this._active) return
+    // 只累加拖动量不落 target——落 target 在 step 每 tick 做（游戏 updateDrag 与 onDrag 分离）
     if (this.offsetX) {
       this.offsetDragX = this.offsetDragTargetX + (pos.x - this._downPos.x) / this.offsetX
-      this.setTargetValue(this.fixTarget(this.offsetDragX))
     }
     if (this.offsetY) {
       // 游戏用 Unity 屏幕坐标（y 向上），浏览器 y 向下——y 分量取反，否则 offset_y 型机器方向镜像（drag_direct 闸门会把"展开方向"的拖动整个钳死）
       this.offsetDragY = this.offsetDragTargetY + (this._downPos.y - pos.y) / this.offsetY
-      this.setTargetValue(this.fixTarget(this.offsetDragY))
     }
   }
 
@@ -531,12 +533,17 @@ export class DragMachine {
         this.offsetDragY = this.offsetDragTargetY = this.startValue
       }
     }
-    // 平滑趋近目标（游戏 updateParameterValue + Live2DExtend.CustomSmoothValue）
+    // 拖拽落 target（游戏 updateDrag DD:688）：按住期间每 tick 用当前拖动量重设目标并重启平滑进度——位置不变也重启（start 与 target 重合，参数一步贴合）；Y 优先（原文 slot1 先后被 offsetX/Y 赋值，后者胜）
+    if (this._active && (this.offsetX || this.offsetY)) {
+      if (this.offsetY) this.setTargetValue(this.fixTarget(this.offsetDragY))
+      else this.setTargetValue(this.fixTarget(this.offsetDragX))
+    }
+    // 平滑趋近目标（游戏 updateParameterValue + Live2DExtend.CustomSmoothValue）：进度按 SMOOTH_RATE×dt 推进，复刻 fixedDeltaTime×30Hz 的 1.67× 时长拉伸
     if (this.parameterValue !== this.parameterTargetValue) {
       if (Math.abs(this.parameterValue - this.parameterTargetValue) < VALUE_EPS) {
         this.setParameterValue(this.parameterTargetValue)
       } else if (this.parameterSmoothTime > 0) {
-        this.parameterSmooth = Math.min(this.parameterSmooth + dt, this.parameterSmoothTime)
+        this.parameterSmooth = Math.min(this.parameterSmooth + SMOOTH_RATE * dt, this.parameterSmoothTime)
         this.setParameterValue(
           this.parameterStartValue +
             (this.parameterTargetValue - this.parameterStartValue) *

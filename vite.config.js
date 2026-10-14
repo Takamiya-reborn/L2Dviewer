@@ -15,6 +15,31 @@ const MIME = {
   '.mjs': 'text/javascript',
 }
 
+/** 皮肤名首字符归类：0 特殊符号、1 数字、2 字母、3 汉字（含假名）。 */
+const nameClass = (ch) => {
+  const c = ch.codePointAt(0)
+  if (!c) return 0
+  if (c >= 0x30 && c <= 0x39) return 1
+  if ((c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)) return 2
+  // 仅表意文字（含扩展区）与假名归汉字组；其余如全角标点归符号
+  if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0x3040 && c <= 0x30ff) || c >= 0x20000) return 3
+  return 0
+}
+
+/**
+ * 皮肤名排序：按首字符类别分组，特殊符号 → 数字 → 字母 → 汉字；
+ * 同组内符号/数字/字母按字典序（忽略大小写），汉字按 zh 拼音序。
+ */
+function compareSkinNames(a, b) {
+  const da = nameClass(a[0])
+  const db = nameClass(b[0])
+  if (da !== db) return da - db
+  if (da === 3) return a.localeCompare(b, 'zh')
+  const la = a.toLowerCase()
+  const lb = b.toLowerCase()
+  return la < lb ? -1 : la > lb ? 1 : 0
+}
+
 /**
  * 扫描 models/<角色>/<皮肤>/<皮肤>.model3.json，生成皮肤清单。
  * 显示名取 <皮肤>.l2d.json 的 name（extract.py 烘焙的游戏内皮肤名），
@@ -36,7 +61,10 @@ function scanModels(modelsDir) {
       models.push({ id, name, url: `/models/${char.name}/${id}/${id}.model3.json` })
     }
   }
-  return models.sort((a, b) => a.id.localeCompare(b.id))
+  // 按显示名分组排序（符号→数字→字母→汉字），侧栏顺序与可见文字一致；同名回退 id
+  return models.sort(
+    (a, b) => compareSkinNames(a.name, b.name) || a.id.localeCompare(b.id),
+  )
 }
 
 /**

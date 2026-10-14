@@ -49,8 +49,9 @@ export class InteractionRuntime {
     this.node = new Map(
       [...this.preservePids].map((pid) => [pid, this.paramDefault(pid)]),
     )
-    // 门控前置集：起播值=1 且该值可产出的开关（某动作从非 1 起播走到结束值=1，或 moc 默认即 1）；起播值 0/-1 是 t0 硬设（消隐/复位/表情预设），不构成前置
+    // 门控前置集：起播值=1 且该值可产出、且 moc 默认就能满足的开关（某动作从非 1 起播走到结束值=1，或 moc 默认即 1）；起播值 0/-1 是 t0 硬设（消隐/复位/表情预设），不构成前置
     // 「从非 1 起播」排除自要求自供给的死锁：若一个分支以自身才是唯一 end=1 产出者的参数起播，算可产出会让该分支从 t0 起永久不可达；不可产出且默认非 1 的前置同样豁免，待提取补全后再收紧
+    // 前置还必须从 moc 默认即满足：游戏干净态的白名单为空、命中反应全放行，默认值给不出的"=1 起播"是动作曲线自己驱动的姿态值而非前置——曲线起播即把它带到位，循环 idle 的回收段再把结束值吸收回去；按前置处理会把摸头/普通触摸/特殊触摸这类基础反应从干净态起永久拦死
     this.gatedPids = new Set(
       Object.values(clips)
         .flatMap((c) => Object.entries(c.state ?? {}))
@@ -59,6 +60,9 @@ export class InteractionRuntime {
     )
     for (const pid of this.statePids) {
       if (this.paramDefault(pid) === 1) this.gatedPids.add(pid)
+    }
+    for (const pid of [...this.gatedPids]) {
+      if (this.paramDefault(pid) !== 1) this.gatedPids.delete(pid)
     }
     this.pending = null
     // 挂起的动作是否 idle 组:等待态判定用(见 canPlay)。idle 循环算等待态,其他动作播放中不算
@@ -253,7 +257,7 @@ export class InteractionRuntime {
   }
 
   /**
-   * 点击门控：与跟踪节点比对而非实时参数（实时值受逐帧曲线与眨眼/呼吸扰动）。前置只取起播值=1 且可产出的开关（见构造函数 gatedPids）——起播值=1 意味着动作依赖该图层/道具已摊开/已持有（如菜单分支以 caidan=1 起播，仅菜单摊开时合法），不符（如菜单收起时点菜单项）则不可触发。未收录/无开关参数的反应动作（touch_drag 系等，extract.py 只落盘有事件或边界数据的 clip）在游戏里由控制器状态而非参数门控。
+   * 点击门控：与跟踪节点比对而非实时参数（实时值受逐帧曲线与眨眼/呼吸扰动）。前置只取起播值=1、可产出且 moc 默认即满足的开关（见构造函数 gatedPids）——起播值=1 意味着动作依赖该图层/道具已摊开/已持有，不符则不可触发（如道具被收起时其分支不可达）；默认值给不出的"=1 起播"不构成前置（动作曲线自己驱动该参数，游戏干净态全部基础反应放行；菜单分支这类默认态不可达的门控由参数机层负责）。未收录/无开关参数的反应动作（touch_drag 系等，extract.py 只落盘有事件或边界数据的 clip）在游戏里由控制器状态而非参数门控。
    * 手势只在等待态被处理（动作播放中途控制器不响应手势，见下方实现）：idle 循环算等待态（pendingIdle），反应动作播完由编排器显式回落 idle、等待态即恢复；菜单摊开后的拖拽分支在 pending 清空后照常可达。
    */
   canPlay(clipName) {

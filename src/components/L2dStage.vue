@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Application } from 'pixi.js'
+import { Application, Ticker } from 'pixi.js'
 import { createInteractionHints } from '../utils/interaction'
 import { installMotionPatches } from '../l2d/motionPatches'
 import { createCamera } from '../l2d/camera'
@@ -28,9 +28,26 @@ const showHints = ref(true)
 // 与游戏 SHOW_TOUCH_EFFECT 同语义（默认开），localStorage 持久化
 const showRipple = ref(localStorage.getItem('l2d.showClickRipple') !== '0')
 watch(showRipple, (v) => localStorage.setItem('l2d.showClickRipple', v ? '1' : '0'))
-// 调试信息（状态机 HUD 读数）独立于交互点开关；hud 为结构化数据
+// 调试信息（状态机 拖拽参数机 HUD 读数）独立于交互点开关；hud 为结构化数据
 const showDebug = ref(true)
 const hud = ref(null)
+// 锁帧开关：默认高帧率（显示器刷新率），拖拽手感异常等问题出现时手动锁 60fps
+// 复刻游戏节拍；localStorage 持久化。模型 autoUpdate 挂在 Ticker.shared，锁帧要两个 ticker 一起盖
+const lockFrame = ref(localStorage.getItem('l2d.lockFrame') === '1')
+watch(lockFrame, (v) => {
+  localStorage.setItem('l2d.lockFrame', v ? '1' : '0')
+  applyFrameLock()
+})
+// HUD 的 FPS 读数（0.5s 窗口帧计数，避免逐帧触发响应式重渲）
+const fps = ref(0)
+let fpsTimer = null
+
+/** 应用锁帧：maxFPS=0 表示不锁。跳帧时 ticker 的 deltaMS 仍为真实流逝时间，机器 step 的 dt 语义不变 */
+function applyFrameLock() {
+  const max = lockFrame.value ? 60 : 0
+  app.ticker.maxFPS = max
+  Ticker.shared.maxFPS = max
+}
 
 let app = null
 let rippleCtl = null
@@ -107,6 +124,8 @@ onMounted(async () => {
   })
   ctx.app = app
   ctx.view = app.view
+  // 读档锁帧开关：保存过锁帧档则开局即锁 60fps（applyFrameLock 读 lockFrame）
+  applyFrameLock()
   watchDpr()
   view = app.view
   canvasHost.value.appendChild(view)
@@ -128,6 +147,16 @@ onMounted(async () => {
   rippleCtl = createClickEffect(app, view, () => showRipple.value)
   app.ticker.add(() => rippleCtl.update(app.ticker.deltaMS / 1000))
   app.ticker.add(createTickerCallback(ctx))
+  // FPS 用 0.5s 窗口帧计数：ticker.FPS 读的 elapsedMS 在节流跳帧期间仍每 rAF 重算，采样会落中
+  // 跳帧周期的短读数（锁帧时显示 100+）；ticker 监听器只在帧真正执行的 tick 触发，计数即真实帧率
+  let fpsFrames = 0
+  app.ticker.add(() => {
+    fpsFrames++
+  })
+  fpsTimer = setInterval(() => {
+    fps.value = fpsFrames * 2
+    fpsFrames = 0
+  }, 500)
   // ResizeObserver 兼顾窗口变化与容器变化（如侧栏收起/展开）
   resizeObserver = new ResizeObserver(() => ctx.camera.fitModel())
   resizeObserver.observe(canvasHost.value)
@@ -145,6 +174,8 @@ onBeforeUnmount(() => {
   dprQuery = null
   resizeObserver?.disconnect()
   resizeObserver = null
+  clearInterval(fpsTimer)
+  fpsTimer = null
   rippleCtl?.destroy()
   rippleCtl = null
   ctx.hintsCtl?.destroy()
@@ -166,9 +197,9 @@ defineExpose({ play: (group) => ctx.actions.playMotion(group) })
   <div class="stage">
     <div ref="canvasHost" class="canvas-host" />
     <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :show-ripple="showRipple"
-      @toggle-hints="showHints = !showHints" @toggle-debug="showDebug = !showDebug"
-      @toggle-ripple="showRipple = !showRipple"
-      @reset="actions.resetInteraction()" />
+      :lock-frame="lockFrame" :fps="fps" @toggle-hints="showHints = !showHints"
+      @toggle-debug="showDebug = !showDebug" @toggle-ripple="showRipple = !showRipple"
+      @toggle-lockframe="lockFrame = !lockFrame" @reset="actions.resetInteraction()" />
     <p v-if="status" class="status">{{ status }}</p>
   </div>
 </template>
