@@ -16,9 +16,9 @@ scripts/tests/
 ├── unit/                      # 合成配置驱动的纯逻辑测试（不依赖 models/）
 │   ├── test_dragmachine.mjs   # 拖拽参数机控制层：状态机 + 联动层 listener_data + 触发类型 1/5/10/11/12
 │   ├── test_interaction.mjs   # 交互有向图状态机（需 public/libs 的 Cubism Core，仅 import）
-│   └── test_render.mjs        # 渲染参数层三件：palette 落笔豁免 / ambient effect 曲线采样 / 曲线目标序归一
+│   ├── test_render.mjs        # 渲染参数层三件：palette 落笔豁免 / ambient effect 曲线采样 / 曲线目标序归一
+│   └── test_ladder_loop.mjs   # 梯子两圈环回链路回归（合成配置 + 真机器）
 ├── asset/                     # 依赖真实模型资产的回归测试（缺资产整支跳过而非失败）
-│   ├── test_ladder_loop.mjs   # shengluyisi_5 梯子两圈链路回归（真实 l2d.json + 真机器）
 │   ├── test_models.mjs        # models/ 全皮肤 moc3 资产体检
 │   └── test_trace.mjs         # 逐帧 trace 确定性回归（真实资产）
 ├── probe/                     # 诊断 CLI（不进 run_all，见下文）
@@ -63,9 +63,9 @@ scripts/tests/
 - **ambient**（改 src/utils/ambient.js）：effect 组曲线采样，fetch 打桩喂 fixture motion3，覆盖四种段类型（线性/贝塞尔/阶跃/反阶跃）、超程钳制到参数范围（shengluyisi_5 Param90/92 达 14.7 的实况）、时长取模循环、缺失参数跳过绑定。曲线只经 loadAmbient+apply 驱动，不直接测内部函数。
 - **曲线目标序归一**（改 src/l2d/motionPatches.js）：内核求值循环按 Model→Parameter→PartOpacity 顺序遍历、遇类型切换即停，混排曲线会让其后同型曲线整体失去求值——归一必须把任何混排修成分组序（含 Meta 镜像同步/已分组原样/缺 Target 兜底/空数据不抛）。需 Cubism Core，缺文件时该段跳过。
 
-### asset/test_ladder_loop.mjs — shengluyisi_5 梯子环回
+### unit/test_ladder_loop.mjs — 梯子两圈环回
 
-**场景**：改触发路由（gestures.js 的 machineZonesAt / orchestrator 的 zoneOrder）或 t6 连点推进后回归。用真实 l2d.json + 真机器代码驱动两圈点击链（drag1 → drag3:4 → … → drag13:19 → 环回），断言每击都播出动作、第二圈起点不断链。注意 onUp 的点击确认窗用真实钟，测试里的假钟须与 performance.now 对齐。
+**场景**：改触发路由（gestures.js 的 machineZonesAt / orchestrator 的 zoneOrder）、白名单路由（checkEnablePlay）或点击触发链后回归。合成配置复刻游戏梯子结构（shengluyisi_5 实测定案）：type 2 点击机链条，每步 active 白名单放行下 1-2 步的动作，末台 active 与首台同构 = 数据上环闭合。驱动两圈点击链（drag1 → drag3:4 → … → drag13:19 → 环回），断言每击都播出动作、白名单外的死点拒播、第二圈环回起点不断链。注意 onUp 的点击确认窗用真实钟，测试里的假钟须与 performance.now 对齐。
 
 ### asset/test_models.mjs — 模型资产体检
 

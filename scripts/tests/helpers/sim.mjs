@@ -63,6 +63,10 @@ export async function createPipelineSim(dir, {
   const model3 = JSON.parse(fs.readFileSync(`${dir}/${name}.model3.json`, 'utf8'))
   const settings = { motions: model3.FileReferences.Motions }
   const stubModel = { internalModel: { coreModel: core, settings, motionManager: null } }
+  // 库内 internalModel.hitAreas：命中区名 -> drawable 下标（firstVisibleHit 按它判存在）
+  stubModel.internalModel.hitAreas = Object.fromEntries(
+    (model3.HitAreas ?? []).map((h) => [h.Name, { index: model.drawables.ids.indexOf(h.Id) }]),
+  )
 
   // 事件总线：MotionManager.on 仿真（InteractionRuntime 构造时挂 motionStart/motionFinish）
   const listeners = { motionStart: [], motionFinish: [] }

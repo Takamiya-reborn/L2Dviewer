@@ -4,7 +4,8 @@
  * 用法（仓库根目录）：node scripts/tests/probe/drive.mjs <皮肤目录> <子命令> [参数]
  *
  *   replay --scene "wait:0.5 click:TouchIdle1 wait:4.5 click:TouchIdle4 wait:13" [--tap] [--param a,b] [--game "clip motion@t"] [--trace-out 文件] [--trace-compare 文件]
- *       场景重放：--scene 步骤为 wait:<sec> 播放 / click:<zone>[:hold] 点区域（hold 默认 0.15）/ reset 调
+ *       场景重放：--scene 步骤为 wait:<sec> 播放 / click:<zone>[:hold] 点区域（hold 默认 0.15）/ hit:<zone> 反应路径
+ *       命中（摸头等机器名单外分区）/ reset 调
  *       resetInteraction()（对齐挂载层复位时序）；--tap 打印 orchestrator 的 [tap] 调试行；--param 末尾追加打印参数
  *       当前值；--game 与"游戏应然态"（clip 节点尾值 + 变体 motion 曲线@t，未覆盖参数以 moc3 默认值兜底）逐参数
  *       对比（差 >0.01）；--trace-out 导出逐帧 trace JSON，--trace-compare 与外部样本（Unity 录制）比较并打印第一
@@ -63,6 +64,9 @@ async function replay(list) {
     else if (kind === 'click') {
       const [zone, hold] = r.split(':')
       await sim.clickZone(zone, hold ? Number(hold) : 0.15)
+    } else if (kind === 'hit') {
+      // 反应路径（C# GetTouchPart 同款）：机器名单外分区的命中播放入口，viewer 由 pointerup 命中测试触发
+      sim.actions.handleHitAreas([r])
     } else if (kind === 'reset') sim.actions.resetInteraction()
     else {
       console.error(`未知场景步骤: ${stepSpec}（支持 wait:<sec> / click:<zone>[:hold] / reset）`)

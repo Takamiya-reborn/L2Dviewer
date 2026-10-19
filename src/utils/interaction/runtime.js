@@ -135,7 +135,8 @@ export class InteractionRuntime {
       if (!boundary || seq !== this._applyEndSeq) return
       for (const [pid, value] of boundary) {
         if (!(this.statePids.has(pid) || this.carryPids.has(pid))) continue
-        if (pid in state || pid in carry) continue
+        // 只跳过 applyEnd 真正落账的表项：state 表项须 pid 在 statePids 内才会被写入（首值 0 的条目被构造过滤掉，applyEnd 不会写），此类参数若同属 carryPids，表项挡不住补账——wuzang_3 正反面切换（Param58/59/60）落在 carryPids，正面 idle 的 state 表项是 [0,0]，若照表项跳过则节点永远学不到回正面，摸头/摸身的起播缓动会把节点残值 30 再度摆出
+        if ((pid in state && this.statePids.has(pid)) || pid in carry) continue
         this.node.set(pid, value)
       }
     })
