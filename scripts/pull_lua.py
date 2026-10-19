@@ -4,7 +4,6 @@
     uv run scripts/pull_lua.py              # 拉取 CN 必需文件（extract.py 用）
     python scripts/pull_lua.py              # 同上，裸 python（仅标准库，无需装依赖）
     ... --server JP                         # 拉日本服务器（可逗号分隔多个：JP,KR）
-    ... --all                               # 连同控制层参照文件一起拉（字段语义参照）
     ... --force                             # 本地已存在也重拉（默认跳过）
 
 选项:
@@ -13,6 +12,7 @@
 
 说明:
     - 文件清单即 docs/azurlane.md 记录的子集，各服务器目录结构一致
+        - 默认含控制层（view/ship/live2d*.lua、mgr/live2dmgr.lua）：交互语义的根修依据
         - 落点固定在 .tmp/lua/（无路径参数）；extract.py 从同一位置读取
     - 上游仓库停更不影响快照有效性，拉一次即可
 """
@@ -37,7 +37,8 @@ REQUIRED = [
     "sharecfg/ship_l2d.lua",
     "sharecfgdata/ship_skin_template.lua",
 ]
-# 参照：控制层，仅字段语义参考用（--all）
+# 控制层：查看器交互语义的根修依据（live2d.lua 调 C#，live2ddrag.lua 是拖拽机本体），
+# 与 ship_l2d 同为默认清单——新皮肤一旦用到监听器/联动等边角语义，缺这份就得现拉
 REFERENCE = [
     "view/ship/live2d.lua",
     "view/ship/live2dconst.lua",
@@ -84,7 +85,7 @@ def main():
         default="CN",
         help="服务器目录，可逗号分隔多个（默认 CN；可选 " + "/".join(SERVERS) + "）",
     )
-    ap.add_argument("--all", action="store_true", help="连同控制层参照文件一起拉")
+    ap.add_argument("--all", action="store_true", help="（已并入默认清单，保留兼容）")
     ap.add_argument("--force", action="store_true", help="已存在也重拉")
     ap.add_argument(
         "--proxy", default=None, help="HTTP(S) 代理 URL（也可设 HTTPS_PROXY 环境变量）"
@@ -96,7 +97,7 @@ def main():
     if bad:
         die(f"未知服务器: {','.join(bad)}（可选 {'/'.join(SERVERS)}）")
 
-    files = REQUIRED + (REFERENCE if args.all else [])
+    files = REQUIRED + REFERENCE
     ok = 0
     for srv in servers:
         print(f"目标: {DEST / srv}（{len(files)} 个文件）\n")

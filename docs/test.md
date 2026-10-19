@@ -46,14 +46,14 @@ scripts/tests/
 **场景**：改 [src/utils/dragmachine/](../src/utils/dragmachine/)（machine.js / orchestrator.js / triggers.js）后回归。合成 ship_l2d 条目分三段覆盖：
 
 - **状态机**：type 1（按压邻域累计）/ 2（常规点击，含 down 配置）/ 3（长按播表 + slot11 回绕松开）/ 6（连点列表）/ 8（充能档位）/ 9（点参触发）/ 12（扩展动作规则过滤门；不主动触发，故 interactable 仍为 null）、relation 101（跟随拖动量）/ 103（开关下标对齐）、冷却塌缩（含 idle 起播）、interactable 红绿判定、ableFlag 开窗监听、pressLock 门控矩阵（谁按下上锁/谁不上锁/锁不影响 onMove/幂等 + reason 留痕）、additive 两阶段还原、localStorage 持久化、同值 changeIdleIndex 不复位、`idle` 摆位机的先切变体后播放、被顶掉动作的播放状态清理、resetAll 契约一揽子（平滑状态/下标/冷却/extendActionFlag 跨域残留全归位）。
-- **联动层**：kind 1 相对增量 / kind 2 绝对赋值、range 钳制、联动命中复位连点下标、apply 区间换挡 + idle_enable/idle_ignore 按变体取名单、type 3 变体号匹配、同值 changeIdleIndex 也广播（CT:1206-1224）、PLAY 通知经 onActionApply 发射、真实点击链路的 PLAY 发射。DRAG_CLICK(2) 在原文是死路径（EVENT_ACTION_APPLY 成功回调实参恒 nil，CT:269/305），专门断言 notice(2) 不再产生任何副作用。
+- **联动层**：kind 1 相对增量 / kind 2 绝对赋值、range 钳制、联动命中复位连点下标、apply 区间换挡 + idle_enable/idle_ignore 按变体取名单、type 3 变体号匹配、同值 changeIdleIndex 也广播（CT:1206-1224）、PLAY 通知经 onActionApply 发射、真实点击链路的 PLAY 发射。DRAG_CLICK(2) 为真路径：click_cd 名单命中自封冷却、type 2 监听机按被点分区赋值（校验名 = draw_able_name）、重复 idle 豁免的点击不发通知。
 - **触发类型**：type 1 按压 num 邻域（±|num|·0.25）累计计时、触发后不清零、单 action 触发即松开（slot11）、action_list 连发到回绕、离开邻域不累计、播放中抑制；type 5 idle 常量跟随（const_fit 变体匹配贴 target、无按压要求、播放中不贴）；type 10 动作链（state 名+变体号匹配时归一化播进过 rate 触发，animationPlayApply 单次闩锁）；type 11 点击区间（点击时他参现值落 num 左闭右开区间才触发）；type 12 扩展门（区间左开右闭、ignore 拦截、enable 直通越按压锁、'idle' 恒放行、resetAll 清位）；另直测 readDragParameter 的按名读取/末台胜出/缺省 0。
 
 这些是逆向自游戏 ship_l2d 的控制层语义（见 [azurlane.md](azurlane.md) 第 3 节），改动若让行为偏离游戏实况会在这里红。
 
 ### unit/test_interaction.mjs — 交互状态机
 
-**场景**：改 [src/utils/interaction/](../src/utils/interaction/)（runtime.js / hitTest.js / hints.js）后回归。fixture 复刻两条游戏内实况链路："touch_idle1 摊开菜单 → touch_idle2 分支（起播 caidan=1）→ touch_idle3 收尾带回 0"与"touch_head 持有道具 glove（默认即满足）→ touch_head2 消耗 → touch_head3 产出"，覆盖：statePids/carryPids/gatedPids 派生（moc 默认给不出的前置不门控）、节点跟踪（pending 结算、被顶掉先行结算、idle 起播立即落账）、canPlay 门控（查节点不查实时参数）、firstVisibleHit 手势路由与透明度过滤、resetParameters/resetState、playHitMotion 精确命中与组内选支。需要 Cubism Core 在位（仅 import），缺文件时整支跳过。动作被顶掉、idle 起播立即结算以及参数复位窗口的行为也应与运行时保持一致。
+**场景**：改 [src/utils/interaction/](../src/utils/interaction/)（runtime.js / hitTest.js / hints.js）后回归。fixture 复刻两条游戏内实况链路："touch_idle1 摊开菜单 → touch_idle2 分支（起播 caidan=1）→ touch_idle3 收尾带回 0"与"touch_head 持有道具 glove（默认即满足）→ touch_head2 消耗 → touch_head3 产出"，覆盖：statePids/carryPids/gatedPids 派生（moc 默认给不出的前置不门控）、节点跟踪（pending 结算、被顶掉先行结算、idle 起播立即落账）、canPlay 门控（查节点不查实时参数）、firstVisibleHit 手势路由与透明度过滤、resetParameters/resetState、playHitMotion 精确命中与组内选支。提示层（hints.js）的分区路由缓存随姿态失效：键除 idle 变体/在播动作外带姿态签名（画布内顶点数与质心位置），摆位参数搬动标记网格后旧路由不滞留。需要 Cubism Core 在位（仅 import），缺文件时整支跳过。动作被顶掉、idle 起播立即结算以及参数复位窗口的行为也应与运行时保持一致。
 
 ### unit/test_render.mjs — 渲染参数层
 

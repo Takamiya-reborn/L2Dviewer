@@ -170,10 +170,8 @@ export class DragMachine {
   /** type 2/6/9/11 点击触发：checkClickAction 判定成功后由 step 调到（clickTriggerTime 到期窗口内）。播放 action（白名单检查在编排器 playAction 里）并应用 activeData；无 action 的机器只做 target 切换。
    * type 9 在触发前先查他参是否贴近 num（±0.05，游戏 EVENT_GET_PARAMETER 回调），不贴近则白点。
    * type 11 同读他参现值但按区间放行（DD:1028-1043：num[0] ≤ 值 < num[1] 才触发）；num 缺省回落 action_list 当前项（与 type 1 同款的 updateTrigger 前置取值）。 */
-  applyClickTrigger() {
+  async applyClickTrigger() {
     this.clickTriggerTime = null
-    // 不广播 DRAG_CLICK：游戏 checkClickAction 成功回调的 onEventNotice（ON_ACTION_DRAG_CLICK）实参恒为 nil（live2d.lua CT:269/305 slot5(slot12)，slot12 从未赋值），监听层永远收不到——click_cd 冷却与 listener_data type 2 在原文是死路径，本地三模型配置也零使用
-    // 真路径只有 PLAY（CT:288）与 CHANGE_IDLE（changeIdleIndex），见 orchestrator.notice
     this.orch.pressLock(`点击确认 ${this.drawAbleName}`, false)
     const at = this.actionTrigger
     if (at?.type === 9) {
@@ -198,7 +196,11 @@ export class DragMachine {
         return
       }
     }
-    this.applyTrigger()
+    const applied = await this.applyTrigger()
+    // DRAG_CLICK 通知（DD:1022-1042/1130-1136）：type 2/9/11 的 apply 回调包 onEventNotice(ON_ACTION_DRAG_CLICK)，
+    // 载荷由 onEventNotice 自造（getCommonNoticeData，恒非 nil）；type 6 不传回调不发（DD:1105-1109）。
+    // slot17 对播放结果无守卫（播不出去也发）；重复 idle 豁免在回调打包前 return，被豁免的触发不发
+    if (applied && this.actionTrigger?.type !== 6) this.orch.notice(2, { draw_able_name: this.drawAbleName })
   }
 
   /** 游戏按住期间的收尾豁免（isApplyStopDrag DD:543）：仅 type 14（DRAG_MOVE_DOWN_UP）为 false，本型未移植，恒可收尾 */
@@ -224,7 +226,7 @@ export class DragMachine {
   /** 游戏触发入口（onEventCallback EVENT_ACTION_APPLY 的 action 分支）。触发冷却/连点下标的推进都按游戏 apply 块的分支顺序落账：先取本次 action 与 activeData（type 6 从 action_list 按 actionListIndex 取并推进下标），再过重复 idle 豁免，最后才是 circle/target 与播放（async：等待引擎真实播放结果后才应用 activeData） */
   async applyTrigger() {
     const at = this.actionTrigger
-    if (!at) return
+    if (!at) return false
     let activeData = this.actionTriggerActive
     let action = null
     if (Array.isArray(at.action_list) && at.action_list.length) {
@@ -250,7 +252,7 @@ export class DragMachine {
       this.isTriggerAtion = false
       this.stopDragIfApply()
     }
-    // 重复 idle 豁免：目标 idle 与当前相同且未开 repeat_flag 时整个触发跳过（菜单已摊开时再点摊开区无效，游戏 onEventCallback 的前置检查）
+    // 重复 idle 豁免：目标 idle 与当前相同且未开 repeat_flag 时整个触发跳过（菜单已摊开时再点摊开区无效，游戏 onEventCallback 的前置检查）；返回 false 告知点击层豁免（游戏在回调打包前 return，DRAG_CLICK 通知一并消失）
     if (activeData?.idle != null) {
       const idle = activeData.idle
       const same =
@@ -262,7 +264,7 @@ export class DragMachine {
         this.orch.debug?.(
           `${this.parameterName} 重复idle豁免(目标${idle}==当前${this.orch.idleIndex})触发跳过`,
         )
-        return
+        return false
       }
     }
     // circle + target：点击把参数设到 target；已在 target 则回 startValue（0↔1 图层切换的机制）
@@ -277,6 +279,7 @@ export class DragMachine {
     if (at.focus === 1) this.isTriggerAtion = false
     // 播放与否决定 activeData 是否应用（游戏 playAction 失败即不应用）
     await this.orch.onActionApply(this, action, activeData)
+    return true
   }
 
   filterAction(action) {
@@ -284,15 +287,19 @@ export class DragMachine {
   }
 
   /** 联动层（游戏 live2ddrag.lua onListenerEvent）：编排器把事件扇给全部机器，这里分两段——
-   * ① 冷却副作用：原文 onListenerTrigger 还有 DRAG_CLICK → click_cd 名单自封 limitTime 冷却一条（DD:207-209），但该通知在原文是死路径（EVENT_ACTION_APPLY 成功回调实参恒 nil，CT:269/305，见 applyClickTrigger 注释），不移植；PLAY 的 min(limitTime,0.2) 塌缩在编排器 noteMotionStart 统一收口（覆盖非机器路径），不在此重复。
-   * ② listenerType 匹配的机器才继续：change 名单按事件类型取校验名（PLAY=动作名 / CHANGE_IDLE=变体号，区分大小写与数字/字符串）做 contains 命中 → kind 1 相对增量（target += value）、kind 2 绝对赋值（target = value；数据定案：kind1 全是 ±Δ 计数/充能条，kind2 是分区→档位阶梯与置位/清零对），过 fixTarget 钳制；命中即复位连点下标（第 4 元缺省 1——配置从未写过第 4 元，缺省复位是真实副作用）。
-   * listener_data.type 2（DRAG_CLICK）随通知死路径一并失效，不再接受；change_focus=false 的暂存分支配置零使用，未移植。
+   * ① 冷却副作用（onListenerTrigger DD:205-215）：DRAG_CLICK 时 click_cd 名单含被点分区者自封 limitTime 冷却；PLAY 的 min(limitTime,0.2) 塌缩在编排器 noteMotionStart 统一收口（覆盖非机器路径），不在此重复。DOWN/XY_TRIGGER/DRAG_TRIGGER 无 click_cd 分支。
+   * ② listenerType 匹配的机器才继续：change 名单按事件类型取校验名（PLAY=动作名 / DRAG_CLICK=被点分区名 getCommonNoticeData().draw_able_name / CHANGE_IDLE=变体号，区分大小写与数字/字符串）做 contains 命中 → kind 1 相对增量（target += value）、kind 2 绝对赋值（target = value；数据定案：kind1 全是 ±Δ 计数/充能条，kind2 是分区→档位阶梯与置位/清零对），过 fixTarget 钳制；命中即复位连点下标（第 4 元缺省 1——配置从未写过第 4 元，缺省复位是真实副作用）。
+   * change_focus=false 的暂存分支配置零使用，未移植。
    * ③ apply 段（kind 1 全库仅 20703701 用）：target 落进区间 [low,high) → 整包 {idle, activeData} 交编排器 applyActiveData（游戏 EVENT_CHANGE_IDLE_INDEX 处理器），idle_enable/idle_ignore 按该变体取名单后再切 idle。多区间命中取最后一条、目标 idle 与当前变体相同时整个事件不发（enable/ignore 一并跳过，DD:183-193）。
    */
   onListenerEvent(type, data) {
+    if (type === 2 && Array.isArray(this.actionTrigger?.click_cd) && this.actionTrigger.click_cd.includes(data.draw_able_name)) {
+      this.nextTriggerTime = this.limitTime
+    }
     const ld = this.listenerData
     if (!ld || ld.type !== type) return
-    const checkName = type === 1 ? data.action : type === 3 ? data.idle : undefined
+    const checkName =
+      type === 1 ? data.action : type === 2 ? data.draw_able_name : type === 3 ? data.idle : undefined
     if (checkName == null) return
     let changed = false
     for (const ch of ld.change ?? []) {

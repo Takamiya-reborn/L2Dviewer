@@ -1,7 +1,7 @@
 // 冒烟测试：拖拽参数机控制层（node scripts/tests/unit/test_dragmachine.mjs，在仓库根目录跑）。
 // 三段合成条目驱动，覆盖：
 // - 状态机：type 1（按压邻域累计）/ 2（常规点击，含 down 配置）/ 3（长按播表 + slot11 回绕松开）/ 6（连点列表）/ 8（充能档位）/ 9（点参触发）/ 12（扩展动作规则过滤门）、relation 101/103、冷却塌缩、interactable、pressLock 门控矩阵、additive 两阶段还原、localStorage 持久化、'idle' 摆位机先切变体后播、起播清滞留播放中、resetAll 契约。
-// - 联动层：kind1 相对累计 / kind2 绝对赋值 / range 钳制 / 连点下标复位 / apply 区间换挡 + idle_enable 名单 / type3 变体号匹配 / PLAY 通知 / DRAG_CLICK(2) 死路径无副作用（原文 EVENT_ACTION_APPLY 成功回调实参恒 nil，CT:269/305，不测且断言不再产生副作用）。
+// - 联动层：kind1 相对累计 / kind2 绝对赋值 / range 钳制 / 连点下标复位 / apply 区间换挡 + idle_enable 名单 / type3 变体号匹配 / PLAY 通知 / DRAG_CLICK(2) 真路径（click_cd 名单自封冷却、type 2 监听按被点分区赋值、重复 idle 豁免的点击不发通知）。
 // - 触发类型：type 5 idle 常量跟随 / type 10 动作链闩锁 / type 11 点击区间 / type 12 扩展门区间裁决。
 import { DragMachine, DragOrchestrator } from '../../../src/utils/dragmachine/index.js'
 import { machinesById, machineById } from '../helpers/machines.mjs'
@@ -427,28 +427,59 @@ section('状态机')
 section('listener 联动层')
 {
   const entries = [
-    { id: 1, draw_able_name: 'TouchDragA', parameter: 'p1', range: [0, 9], start_value: 0,
-      listener_data: { type: 1, change: [[1, ['TouchDrag1'], 1], [2, ['TouchDrag2'], 5]] } },
-    { id: 2, draw_able_name: 'TouchDragB', parameter: 'p2', range: [0, 1], start_value: 1,
-      listener_data: { type: 1, change: [[1, ['TouchDrag1'], 1]] } },
-    { id: 3, draw_able_name: 'TouchDragC', parameter: 'p3', range: [0, 9], start_value: 0,
+    {
+      id: 1, draw_able_name: 'TouchDragA', parameter: 'p1', range: [0, 9], start_value: 0,
+      listener_data: { type: 1, change: [[1, ['TouchDrag1'], 1], [2, ['TouchDrag2'], 5]] }
+    },
+    {
+      id: 2, draw_able_name: 'TouchDragB', parameter: 'p2', range: [0, 1], start_value: 1,
+      listener_data: { type: 1, change: [[1, ['TouchDrag1'], 1]] }
+    },
+    {
+      id: 3, draw_able_name: 'TouchDragC', parameter: 'p3', range: [0, 9], start_value: 0,
       action_trigger: { type: 6, action_list: [{ action: 'a1' }, { action: 'a2' }, { action: 'a3' }] },
-      listener_data: { type: 1, change: [[2, ['TouchDrag2'], 0]] } },
-    { id: 4, draw_able_name: 'TouchDragD', parameter: 'p4', range: [-1, 1], start_value: 0,
+      listener_data: { type: 1, change: [[2, ['TouchDrag2'], 0]] }
+    },
+    {
+      id: 4, draw_able_name: 'TouchDragD', parameter: 'p4', range: [-1, 1], start_value: 0,
       action_trigger_active: {
         idle_enable: [[0, ['act0']], [8, ['act8']], [9, ['act9']]],
         idle_ignore: [[8, ['ig8']]],
       },
-      listener_data: { type: 1, change: [[1, ['TouchDrag2'], 1], [1, ['TouchDrag3'], -1]],
-        apply: [1, [[-1, 0, 8], [0, 1, 0], [1, 2, 9]]] } },
-    { id: 5, draw_able_name: 'TouchDragE', parameter: 'p5', range: [0, 9], start_value: 4,
-      listener_data: { type: 3, change: [[2, [0], 0]] } },
-    { id: 6, draw_able_name: 'TouchDragF', parameter: 'p6', range: [0, 9], start_value: 0,
-      listener_data: { type: 1, change: [[1, ['touch_drag1'], 2]] } },
-    { id: 7, draw_able_name: 'TouchDragG', parameter: 'p7', range: [0, 9], start_value: 0,
-      action_trigger: { type: 2, action: 'touch_g' } },
-    { id: 8, draw_able_name: 'TouchDrag1', parameter: 'p8', range: [0, 9], start_value: 0,
-      action_trigger: { type: 2, action: 'touch_drag1' } },
+      listener_data: {
+        type: 1, change: [[1, ['TouchDrag2'], 1], [1, ['TouchDrag3'], -1]],
+        apply: [1, [[-1, 0, 8], [0, 1, 0], [1, 2, 9]]]
+      }
+    },
+    {
+      id: 5, draw_able_name: 'TouchDragE', parameter: 'p5', range: [0, 9], start_value: 4,
+      listener_data: { type: 3, change: [[2, [0], 0]] }
+    },
+    {
+      id: 6, draw_able_name: 'TouchDragF', parameter: 'p6', range: [0, 9], start_value: 0,
+      listener_data: { type: 1, change: [[1, ['touch_drag1'], 2]] }
+    },
+    {
+      id: 7, draw_able_name: 'TouchDragG', parameter: 'p7', range: [0, 9], start_value: 0,
+      action_trigger: { type: 2, action: 'touch_g' }
+    },
+    {
+      id: 8, draw_able_name: 'TouchDrag1', parameter: 'p8', range: [0, 9], start_value: 0,
+      action_trigger: { type: 2, action: 'touch_drag1' }
+    },
+    {
+      id: 9, draw_able_name: 'TouchDragH', parameter: 'p9', range: [0, 9], start_value: 0,
+      action_trigger: { type: 7 },
+      listener_data: { type: 2, change: [[2, ['TouchDrag1'], 0], [2, ['TouchDrag11'], 1]] }
+    },
+    {
+      id: 10, draw_able_name: 'TouchDragI', parameter: 'p10', range: [0, 9], start_value: 0,
+      action_trigger: { type: 2, action: 'touch_i', click_cd: ['TouchDrag1'] }, limit_time: 1
+    },
+    {
+      id: 11, draw_able_name: 'TouchDragJ', parameter: 'p11', range: [0, 9], start_value: 0,
+      action_trigger: { type: 2, action: 'touch_j' }, action_trigger_active: { idle: 0 }
+    },
   ]
   const config = { skin_id: 0, entries, idle_index: {} }
   const played = []
@@ -460,10 +491,10 @@ section('listener 联动层')
       return true
     },
   )
-  orch.debugHook = () => {}
+  orch.debugHook = () => { }
 
   // 按条目 id 取机器（machines 序 = entries 序非 id 序，位置解构会错位）
-  const { 1: m1, 2: m2, 3: m3, 4: m4, 5: m5, 6: m6, 7: m7, 8: m8 } = machinesById(orch)
+  const { 1: m1, 2: m2, 3: m3, 4: m4, 5: m5, 6: m6, 7: m7, 8: m8, 9: m9, 10: m10, 11: m11 } = machinesById(orch)
 
   // ① kind1 相对累计：+1 两次 → 2；kind2 绝对：=5（不累计）
   orch.notice(1, { action: 'TouchDrag1' })
@@ -511,12 +542,15 @@ section('listener 联动层')
   await orch.onActionApply(m8, 'touch_drag1', null)
   near('PLAY 通知 type1 监听 +2', m6.parameterTargetValue, 2)
 
-  // ⑦ DRAG_CLICK 死路径回归：notice(2) 不产生任何副作用（冷却/联动全无）
+  // ⑦ DRAG_CLICK 真路径：click_cd 名单命中自封冷却 + type 2 监听机按被点分区赋值（校验名=draw_able_name）
   m7.nextTriggerTime = 0
   const m1Before = m1.parameterTargetValue
   orch.notice(2, { draw_able_name: 'TouchDrag1' })
-  check('notice(2) 不再封 click_cd 冷却（原文死路径）', m7.nextTriggerTime === 0)
-  near('notice(2) 不再驱动 type1 联动', m1.parameterTargetValue, m1Before)
+  check('click_cd 命中被点分区 → 自封 limitTime 冷却', m10.nextTriggerTime === 1, `实际 ${m10.nextTriggerTime}`)
+  near('type 2 监听命中 TouchDrag1 → 0', m9.parameterTargetValue, 0)
+  near('type1 监听不收 DRAG_CLICK', m1.parameterTargetValue, m1Before)
+  orch.notice(2, { draw_able_name: 'TouchDrag11' })
+  near('type 2 监听命中 TouchDrag11 → 1', m9.parameterTargetValue, 1)
 
   // ⑧ 真实点击链路发 PLAY：点 TouchDrag1（type 2 机）→ m6 联动 +2、
   //    其他机器不被"被点分区"封冷却
@@ -529,6 +563,7 @@ section('listener 联动层')
   }
   const flush = () => new Promise((r) => setTimeout(r, 0))
   const m6Before = m6.parameterTargetValue
+  m9.setTargetValue(9) // 拉离监听目标值，验证真实点击链路能把 type 2 监听写回 0
   m8.onDown({ x: 0, y: 0 }, false)
   m8.onUp({ x: 0, y: 0 })
   drive(9)
@@ -536,7 +571,19 @@ section('listener 联动层')
   await flush()
   near('点击链路 PLAY → type1 监听 +2', m6.parameterTargetValue, m6Before + 2)
   check('点击机动作播出', played.includes('touch_drag1'), `实际 played=[${played}]`)
-  check('点击链路不给其他机器封 limitTime 冷却', m7.nextTriggerTime === 0)
+  near('点击链路 DRAG_CLICK → type 2 监听写回 0', m9.parameterTargetValue, 0)
+  check('click_cd 名单机被点击链路封冷却', m10.nextTriggerTime === 1, `实际 ${m10.nextTriggerTime}`)
+  check('无 click_cd 机器不受点击链路冷却', m7.nextTriggerTime === 0)
+
+  // ⑨ 重复 idle 豁免在回调打包前 return：被豁免的点击不发 DRAG_CLICK（DD:486-493 早于 slot2 打包）
+  m9.setTargetValue(9)
+  m11.onDown({ x: 0, y: 0 }, false)
+  m11.onUp({ x: 0, y: 0 })
+  drive(9)
+  await flush()
+  await flush()
+  check('豁免触发不播出（idle 0 已是当前变体）', !played.includes('touch_j'), `实际 played=[${played}]`)
+  near('豁免触发不发 DRAG_CLICK（type 2 监听不被写）', m9.parameterTargetValue, 9)
 }
 
 // ============ 触发类型 5/10/11/12（1 已在状态机段覆盖）============
@@ -570,7 +617,7 @@ section('触发类型 1/5/10/11/12')
       return true
     },
   )
-  orch.debugHook = () => {}
+  orch.debugHook = () => { }
   // 按条目 id 取机器（machines 序 = entries 序非 id 序，位置解构会整体错位）
   const { 1: m1, 6: m1L, 2: m5, 3: m12a, 4: m12b, 5: mP } = machinesById(orch)
 
@@ -694,7 +741,7 @@ section('触发类型 1/5/10/11/12')
       return true
     },
   )
-  orch2.debugHook = () => {}
+  orch2.debugHook = () => { }
   const { 10: m10, 11: m11 } = machinesById(orch2)
   let fakeNow2 = performance.now() / 1000
   const drive2 = (frames) => {

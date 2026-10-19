@@ -1,4 +1,4 @@
-/** 指针手势状态机（原生 DOM 事件，模拟 Unity 端控制器）：游戏内按住并拖动时视线跟随鼠标，长按不动不追踪，松手后回正；松手时位移小于阈值算点击、否则算拖拽（触发 touch_drag 分区而非 touch_idle 分区）。按下先尝试机器分区分流（拖拽参数机接管），未消费再走 meshHitTest 精确命中 -> 状态机播放路径。读 ctx.app / ctx.model / ctx.orch / ctx.dragScale / ctx.actions.handleHitAreas，写 ctx.lastGesture。 */
+/** 指针手势状态机（原生 DOM 事件，模拟 Unity 端控制器）：视线目标是当前指针位置，悬停即跟随、松手保持（游戏 Live2dChar 每帧以指针位置平滑刷新 look 目标，不依赖按压也不回零）；松手时位移小于阈值算点击、否则算拖拽（触发 touch_drag 分区而非 touch_idle 分区）。按下先尝试机器分区分流（拖拽参数机接管），未消费再走 meshHitTest 精确命中 -> 状态机播放路径。读 ctx.app / ctx.model / ctx.orch / ctx.dragScale / ctx.actions.handleHitAreas，写 ctx.lastGesture。 */
 import { meshHitTest } from '../utils/interaction'
 
 // 游戏内：松手时位移小于阈值算点击、否则算拖拽
@@ -59,7 +59,7 @@ export function createGestures(ctx) {
     return machineZonesAt(x, y)[0] ?? ''
   }
 
-  /** 按住期间视线跟随指针 */
+  /** 视线跟随指针（悬停与按住都跟随，游戏 look 目标每帧取指针位置） */
   function followGaze(x, y) {
     ctx.model?.focus(x, y)
   }
@@ -96,11 +96,12 @@ export function createGestures(ctx) {
   }
 
   function onPointerMove(e) {
-    if (!pressing) return
     const { x, y } = pointerPos(e)
+    // 视线与按压解耦：悬停即跟随（松手也不回零，眼值维持非零才能驱动胸部系物理输出口）
+    followGaze(x, y)
+    if (!pressing) return
     maxDist = Math.max(maxDist, Math.hypot(x - downX, y - downY))
     if (!dragging && maxDist > GAZE_START_THRESHOLD) dragging = true
-    if (dragging) followGaze(x, y)
     // 按住期间拖拽参数机持续驱动（游戏 onPointDrag 对全部机器广播）
     ctx.orch?.onMove(dragPos({ x, y }))
   }
@@ -108,7 +109,6 @@ export function createGestures(ctx) {
   function onPointerUp(e) {
     if (!pressing) return
     pressing = false
-    if (dragging) resetGaze()
     // 换模型窗口期 ctx.model 已指向未揭幕的新模型，不可交互
     if (!ctx.model?.visible) return
     const { x, y } = pointerPos(e)
@@ -127,8 +127,9 @@ export function createGestures(ctx) {
     // 松手点做网格级精确命中（游戏 CubismRaycaster 语义；model.tap 内部是包围盒 hitTest，这里直接算好命中名单直呼 handleHitAreas 绕开它）：点击走 idle/head/body 分区，拖拽走 touch_drag 分区
     const hits = meshHitTest(ctx.model, x, y) // 纯查询,无副作用
     // 落点诊断：留痕目的是区分"点了没反应"时到底命中了什么——handleHitAreas 路径不写触发链，这里把实际命中的分区名单交代进触发链，路由问题可排查
+    // "未达机器分区"是常态不是异常：摸头/摸身体/touch_special 等本就没有机器（ship_l2d 无此分区），点击本就该由 C# 反应路径（handleHitAreas）接手播放
     if (hits.length) {
-      ctx.orch?.debug?.(`落点未达机器分区(命中:${hits.slice(0, 4).join(',')}${hits.length > 4 ? ` 等${hits.length}个` : ''})`)
+      ctx.orch?.debug?.(`C#反应路径(命中:${hits.slice(0, 4).join(',')}${hits.length > 4 ? ` 等${hits.length}个` : ''})`)
       ctx.actions.handleHitAreas(hits)
     } else {
       // 空命中也要留痕：留痕目的是能区分"没点到"和"点了但网格隐藏/移位"，命中 0 个同样要交代进触发链

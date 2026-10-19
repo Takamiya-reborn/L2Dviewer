@@ -196,8 +196,8 @@ export class DragOrchestrator {
   }
 
   /** 联动广播（游戏 onListenerHandle → live2ddrag onListenerEvent）：全部机器无差别收到。
-   * 有消费方的事件只有两类：PLAY(1)（CT:288 播放成功后）与 CHANGE_IDLE(3)（changeIdleIndex）。
-   * DRAG_CLICK(2)/DOWN/XY_TRIGGER/DRAG_TRIGGER 四类在原文是死路径——EVENT_ACTION_APPLY 成功回调实参恒 nil（CT:269/305），监听层永远收不到，不发；ON_ACTION_PARAMETER 在 3759 条配置里零监听者，不发。 */
+   * 有消费方的事件有三类：PLAY(1)（CT:288 播放成功后）、DRAG_CLICK(2)（type 2/9/11 点击应用后，载荷 draw_able_name=被点分区，见 machine.applyClickTrigger）、CHANGE_IDLE(3)（changeIdleIndex）。
+   * DOWN(5)/XY_TRIGGER(6)/DRAG_TRIGGER(7) 在原文是死路径——apply 回调体带 if-slot0 守卫而回调实参恒 nil（CT:269/305），通知永远不出；ON_ACTION_PARAMETER 在 3759 条配置里零监听者，不发。 */
   notice(type, data) {
     for (const m of this.machines) m.onListenerEvent(type, data)
   }

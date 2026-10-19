@@ -28,8 +28,10 @@ const showHints = ref(true)
 // 与游戏 SHOW_TOUCH_EFFECT 同语义（默认开），localStorage 持久化
 const showRipple = ref(localStorage.getItem('l2d.showClickRipple') !== '0')
 watch(showRipple, (v) => localStorage.setItem('l2d.showClickRipple', v ? '1' : '0'))
-// 调试信息（状态机 拖拽参数机 HUD 读数）独立于交互点开关；hud 为结构化数据
-const showDebug = ref(true)
+// 调试信息（状态机 拖拽参数机 HUD 读数）独立于交互点开关；hud 为结构化数据；默认关闭，调试时再开
+const showDebug = ref(false)
+// 注入面板独立于调试信息开关；默认关闭
+const showInject = ref(false)
 const hud = ref(null)
 // 锁帧开关：默认高帧率（显示器刷新率），拖拽手感异常等问题出现时手动锁 60fps
 // 复刻游戏节拍；localStorage 持久化。模型 autoUpdate 挂在 Ticker.shared，锁帧要两个 ticker 一起盖
@@ -38,6 +40,9 @@ watch(lockFrame, (v) => {
   localStorage.setItem('l2d.lockFrame', v ? '1' : '0')
   applyFrameLock()
 })
+// 隐藏 dev 功能：收起工具栏 dev 按钮与调试/注入面板（非开发者的测试员/用户用）；交互点供测试者使用，不随之隐藏
+const hideDev = ref(localStorage.getItem('l2d.hideDev') === '1')
+watch(hideDev, (v) => localStorage.setItem('l2d.hideDev', v ? '1' : '0'))
 // HUD 的 FPS 读数（0.5s 窗口帧计数，避免逐帧触发响应式重渲）
 const fps = ref(0)
 let fpsTimer = null
@@ -196,10 +201,12 @@ defineExpose({ play: (group) => ctx.actions.playMotion(group) })
 <template>
   <div class="stage">
     <div ref="canvasHost" class="canvas-host" />
-    <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :show-ripple="showRipple"
-      :lock-frame="lockFrame" :fps="fps" @toggle-hints="showHints = !showHints"
-      @toggle-debug="showDebug = !showDebug" @toggle-ripple="showRipple = !showRipple"
-      @toggle-lockframe="lockFrame = !lockFrame" @reset="actions.resetInteraction()" />
+    <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :show-inject="showInject" :show-ripple="showRipple"
+      :lock-frame="lockFrame" :hide-dev="hideDev" :fps="fps" @toggle-hints="showHints = !showHints"
+      @toggle-debug="showDebug = !showDebug" @toggle-inject="showInject = !showInject"
+      @toggle-ripple="showRipple = !showRipple"
+      @toggle-lockframe="lockFrame = !lockFrame" @toggle-hidedev="hideDev = !hideDev"
+      @reset="actions.resetInteraction()" />
     <p v-if="status" class="status">{{ status }}</p>
   </div>
 </template>

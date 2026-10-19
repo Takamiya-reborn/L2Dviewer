@@ -18,7 +18,9 @@
 原理 (见 docs/azurlane.md):
     - CubismMoc._bytes 直接是 moc3 二进制
     - 贴图 Texture2D (ASTC 由 UnityPy 转码) -> PNG
-    - TextAsset *.physics3 为 JSON 原文（非 UTF-8 的 TextAsset 落 .bin 原始字节）
+    - TextAsset *.physics3 为 JSON 原文，但包内这份缺每条设置的 Input.Normalization（游戏运行时物理用
+      CubismPhysicsController._rig 序列化数据，不经这份 JSON）——落盘时按 _rig.SubRigs[i].Normalization
+      逐条注入补齐（两份数据其余字段逐项一致，已对 zhenzhuhao_2 全量 diff 验证）；非 UTF-8 的 TextAsset 落 .bin 原始字节
     - Unity AnimationClip (streamed+constant 曲线, CRC32 哈希绑定) -> motion3.json
     - moc3 默认值：Cubism 4/5 (moc3 版本字节=4/5，节表布局一致) 头部 0x40 起是节偏移表 (递增 u32)；表[51]=参数 max、表[52]=min、表[53]=defaults，各为 n_f32 数组、按 CubismParameter._unmanagedIndex 对位（字符串槽区顺序与此无关）。min<=default<=max 全程成立可作校验。
 """
@@ -697,6 +699,32 @@ def animator_fades(env) -> dict | None:
     return {"default": default, "transitions": dict(sorted(transitions.items()))}
 
 
+def inject_physics_normalization(text: str, rig: dict) -> str:
+    """把 CubismPhysicsController._rig 的 Normalization（Position/Angle 的 Minimum/Maximum/Default）逐条
+    注入 physics3.json 文本。包内 TextAsset 缺该块，而游戏运行时物理读 _rig 不读这份 JSON——缺失会让
+    框架的输入归一化取 undefined、物理输出全趴（zhenzhuhao_2 案：胸/臂形变链整体失效）。_rig 与
+    TextAsset 除该块外逐字段一致（全 12 条 diff 验证，仅 float32 精度噪声），按下标 zip 注入；
+    两边设置数不齐或任一条缺 Normalization 时放弃注入落原文，不落半成品。"""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return text
+    subs = rig.get("SubRigs") or []
+    settings = data.get("PhysicsSettings")
+    if not isinstance(settings, list) or not isinstance(subs, list) or len(settings) != len(subs):
+        print(
+            f"[warn] physics3 与 _rig 设置数不齐({len(settings) if isinstance(settings, list) else '?'}/{len(subs)})，跳过 Normalization 注入"
+        )
+        return text
+    for setting, sub in zip(settings, subs):
+        norm = sub.get("Normalization")
+        if not isinstance(norm, dict) or "Position" not in norm or "Angle" not in norm:
+            print(f"[warn] _rig 设置 {sub.get('Name')} 缺 Normalization，放弃注入落原文")
+            return text
+        setting["Normalization"] = norm
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
 LUA_ENTRY_RE = re.compile(r"^\tpg\.base\.ship_l2d\[(\d+)\] = \{$", re.MULTILINE)
 LUA_TEMPLATE_RE = re.compile(
     r"^_G\.pg\.base\.ship_skin_template\[(\d+)\] = \{$", re.MULTILINE
@@ -900,6 +928,7 @@ def main() -> None:
     # --- moc3 / 贴图 / physics / Live2dChar（同时收集全量 inventory 记录）
     textures, text_assets, moc_bytes = [], {}, None
     live2d_char = None
+    physics_rig = None  # CubismPhysicsController._rig：物理归一化区间的权威来源（包内 physics3.json 缺这块）
     raycastables = []
     param_names = []
     mono_records = []  # inventory: 全部 MonoBehaviour (path_id, 脚本类名, typetree)
@@ -931,6 +960,8 @@ def main() -> None:
                 moc_bytes = bytes(tree["_bytes"])
             elif cls == "Live2dChar" and live2d_char is None:
                 live2d_char = {k: v for k, v in tree.items() if not k.startswith("m_")}
+            elif cls == "CubismPhysicsController" and physics_rig is None:
+                physics_rig = tree.get("_rig")
             elif cls == "CubismRaycastable":
                 gid = tree["m_GameObject"]["m_PathID"]
                 raycastables.append(go_names.get(gid, f"mesh_{obj.path_id}"))
@@ -966,6 +997,9 @@ def main() -> None:
         except UnicodeDecodeError:
             (out_dir / f"{name}.bin").write_bytes(raw)  # 非 UTF-8 资产存原始字节
             continue
+        if name == f"{model_id}.physics3" and physics_rig:
+            # 包内 physics3.json 缺 Input.Normalization（游戏运行时用 _rig 不用这份），按 _rig 逐条注入补齐
+            text = inject_physics_normalization(text, physics_rig)
         (out_dir / f"{name}.json").write_text(text, encoding="utf-8")
 
     if live2d_char:

@@ -58,6 +58,7 @@
 - dev server 实时扫描 `models/<角色>/<皮肤id>/`，前端按模型入口加载皮肤，无需手工登记。
 - 标准 Cubism 资源负责渲染，`char.json`、`interaction.json` 和 `l2d.json` 作为本项目扩展数据，分别承载基础交互参数、动作状态信息和参数机配置。
 - `fades.json` 保存 Unity Animator 按动作提取的 AnyState 转场时长；查看器按 clip 应用交叉渐变，并让交互参数复位使用同一时长，缺失时回退到 300ms。
+- 动作库补丁对齐游戏本体运行时语义：曲线目标分组序归一、参数落笔去钳位（游戏直写原值，越出 moc3 量程的值是合法姿态）。
 - `idle` 动作支持先切换变体再播放，适用于用背景网格切换待机摆位的皮肤；被新动作顶掉的旧反应不会遗留“播放中”状态。
 - `src/l2d/` 负责舞台、镜头、动作与手势装配，`src/utils/` 负责交互状态机、拖拽参数机和氛围动画；详细还原规则以 [unpack.md](docs/unpack.md) 为准。
 - 未烘焙 `l2d.json` 的皮肤仍可加载，但会跳过参数机层，退回基础交互路径。
@@ -71,7 +72,7 @@ tools/Il2CppDumper/   # 游戏 C# 程序集 dump 工具（MIT，逆向期参考�
 models/               # 导出的标准 Cubism 模型（moc3 v4/v5），按 <角色>/<皮肤id> 两级目录组织（不入库）
 src/                  # Vue 前端（图鉴 + L2D 舞台 + 交互层）
 ├── components/       # UI：L2dStage（瘦壳）+ tabs/ 侧栏 + debug/HudPanel（HUD 面板）
-├── l2d/              # 舞台核心（普通模块 + ctx 对象，不依赖 vue）：motionPatches（动作库补丁）、camera（取景与拖拽标定）、mount（模型挂载装配）、actions（播放 API）、gestures（指针手势）、hud（每帧读数）
+├── l2d/              # 舞台核心（普通模块 + ctx 对象，不依赖 vue）：motionPatches（动作库补丁）、motionDiff（动作曲线差分）、paramOverride（HUD 参数注入）、camera（取景与拖拽标定）、mount（模型挂载装配）、actions（播放 API）、gestures（指针手势）、hud（每帧读数）
 └── utils/            # 交互实现：interaction/（状态机运行时、网格命中、提示层）、dragmachine/（拖拽参数机 machine/orchestrator/triggers）、ambient（effect 氛围层）、models（皮肤清单）
 ```
 

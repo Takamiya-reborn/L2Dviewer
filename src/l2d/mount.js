@@ -56,6 +56,10 @@ async function mountModelInner(ctx, url) {
     return
   }
   ctx.model = model
+  // 库默认呼吸层（CubismBreath：AngleX ±7.5 / AngleY ±4 / AngleZ ±5 / BodyAngleX ±2 / ParamBreath ±0.5 正弦逐帧叠加）是查看器库层私货：
+  // 游戏 C# 组件清单只有 EyeBlink/HarmonicMotion/Look/Motion/Physics/Pose/Expression/Mouth 控制器，无 Breath——
+  // 头部角度参数在动作里直接键控形变链（如 idle5 恒持 AngleZ=20 的肩颈形变），呼吸正弦逐帧把键控值推出范围，姿态周期性偏离游戏
+  model.internalModel.breath?.setParameters?.([])
   // 装配序列未走完前不上台，揭幕在挂载尾部
   model.visible = false
   // 逐 clip 转场时长表（<id>.fades.json，extract.py 的 animator_fades 从 bundle 的 AnimatorController 提取）：motionPatches.createMotion 按它设置动作渐入时长，动作起播的复位缓动窗口也取同一值——两处严格同源
@@ -83,7 +87,7 @@ async function mountModelInner(ctx, url) {
       clip,
     )
   })
-  // 常驻氛围层：effect 组（垂发/扶手布的微风摆动）在游戏内永远循环叠加，这里挂在 afterMotionUpdate（主动作求值后、saveParameters 前）直写参数，物理与姿态系统不触碰这些参数，故不会与本层互相覆盖
+  // 常驻氛围层：effect 组（垂发/扶手布的微风摆动）在游戏内永远循环叠加，这里挂在 afterMotionUpdate（主动作求值后、saveParameters 前）直写参数，物理与姿态系统不触碰这些参数，故不会与本层互相覆盖。游戏内实测（zhenzhuhao_2）：effect 参数可与全部动作重叠（五体系列 MB_*×10 等），游戏表现是本层值赢——动作里同参数曲线是导出时烘焙的副本，被本层盖掉才是游戏内观感（挂 beforeMotionUpdate 让动作赢下共享参数，摆动会退化为动作副本的粗糙节奏）
   // effect 缺失/加载失败只跳过本层，不应中断整个挂载
   try {
     const ambient = await loadAmbient(url, model.internalModel.settings)

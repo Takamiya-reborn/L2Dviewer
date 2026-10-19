@@ -1,6 +1,6 @@
 /** pixi-live2d-display 动作库补丁（安装一次，幂等）：动作交叉渐变恢复、尊重 Meta.Loop、idle 确定性选支。补丁运行时读 activeCtx.fades / activeCtx.orch / activeCtx.runtime——每次舞台挂载调用 installMotionPatches(ctx) 更新 activeCtx（L2dStage 被 App.vue 按 :key 逐皮肤整体重挂，补丁单例必须跟随当前活动舞台，见 activeCtx 注释）。 */
 import { Ticker } from 'pixi.js'
-import { Cubism4MotionManager, Live2DModel, config } from 'pixi-live2d-display/cubism4'
+import { Cubism4InternalModel, Cubism4MotionManager, CubismModel, Live2DModel, config } from 'pixi-live2d-display/cubism4'
 
 let installed = false
 
@@ -140,5 +140,41 @@ export function installMotionPatches(ctx) {
       return this.startMotion(group, Math.max(base, 0), priority)
     }
     return startRandomMotion.call(this, group, priority)
+  }
+
+  /**
+   * 视线层对齐游戏本体 CubismLookController（bundle 实测每模型的 Sources/Destinations：EyeBallX/Y Factor 1、AngleX/Y Factor 30、BodyAngleX/Y Factor 10，只有 X/Y 两轴源）。
+   * 库内默认多写 AngleZ += x·y·(−30)——游戏无 Z 轴源，该分量是纯新增：头部侧倾类动作（如 zhenzhuhao_2 idle5 恒持 AngleZ=20）的肩颈形变按动作里的 AngleZ 键控，叠加鼠标位移会把形变链推出键控范围；库还缺 BodyAngleY += 10·y 一路，一并补齐。模型缺某参数时核心层 addParameterValueById 按无操作处理。
+   */
+  Cubism4InternalModel.prototype.updateFocus = function () {
+    const x = this.focusController.x
+    const y = this.focusController.y
+    this.coreModel.addParameterValueById(this.idParamEyeBallX, x)
+    this.coreModel.addParameterValueById(this.idParamEyeBallY, y)
+    this.coreModel.addParameterValueById(this.idParamAngleX, 30 * x)
+    this.coreModel.addParameterValueById(this.idParamAngleY, 30 * y)
+    this.coreModel.addParameterValueById('ParamBodyAngleY', 10 * y)
+    this.coreModel.addParameterValueById(this.idParamBodyAngleX, 10 * x)
+  }
+
+  /**
+   * 参数落笔去钳位（游戏本体语义）：框架的 CubismModel.setParameterValueByIndex 写值前把值钳进 moc3 量程，
+   * 游戏自研运行时是把曲线原值直写核心参数数组——内核关键形态求值对越界值有独立落点，两种写法是不同姿态：
+   * zhenzhuhao_2 双小臂 Param29/44 在 idle5 的曲线原值 55.1/42.9（量程 [-30,30]），真引擎实测"原值直写"与
+   * "钳到 30"相差 15px，后者即"小臂变形"；原值直写与游戏画面吻合（HUD 注入 -4/-17 对照确认，两者差 0.6px）。
+   * 原型级补丁覆盖三个写入口，保留 weight 混合与不存在参数的旁路语义。
+   */
+  CubismModel.prototype.setParameterValueByIndex = function (parameterIndex, value, weight = 1) {
+    if (parameterIndex in this._notExistParameterValues) {
+      this._notExistParameterValues[parameterIndex] = weight == 1 ? value : this._notExistParameterValues[parameterIndex] * (1 - weight) + value * weight
+      return
+    }
+    this._parameterValues[parameterIndex] = weight == 1 ? value : this._parameterValues[parameterIndex] * (1 - weight) + value * weight
+  }
+  CubismModel.prototype.addParameterValueByIndex = function (parameterIndex, value, weight = 1) {
+    this.setParameterValueByIndex(parameterIndex, this.getParameterValueByIndex(parameterIndex) + value * weight, 1)
+  }
+  CubismModel.prototype.multiplyParameterValueByIndex = function (parameterIndex, value, weight = 1) {
+    this.setParameterValueByIndex(parameterIndex, this.getParameterValueByIndex(parameterIndex) * (1 + (value - 1) * weight), 1)
   }
 }

@@ -96,6 +96,31 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
     return null
   }
 
+  /** 边界边与画布矩形的裁剪交段中点（Liang-Barsky）：擦边细条带与画布只交一条缝，采样网格与边界中点全落空；不交返回 null */
+  function clipMidpoint(ax, ay, bx, by, W, H) {
+    const dx = bx - ax
+    const dy = by - ay
+    let t0 = 0
+    let t1 = 1
+    const clip = (p, q) => {
+      if (p === 0) return q >= 0
+      const t = q / p
+      if (p < 0) {
+        if (t > t1) return false
+        if (t > t0) t0 = t
+      } else {
+        if (t < t0) return false
+        if (t < t1) t1 = t
+      }
+      return true
+    }
+    if (!clip(-dx, ax)) return null
+    if (!clip(dx, W - ax)) return null
+    if (!clip(-dy, ay)) return null
+    if (!clip(dy, H - ay)) return null
+    return { x: ax + ((t0 + t1) / 2) * dx, y: ay + ((t0 + t1) / 2) * dy }
+  }
+
   /** 露出点重定位：提示点钉到"按下去真能触发本分区"的画布内位置。
    * 巨大网格（如 4374×4000 的背景板）顶点稀疏，全顶点质心会落在画布边缘的露出死角，不代表实际交互区，锚点按"画布内可见网格区"取：
    * ① 画布 12×12 采样点做本分区三角形的点测（只遍历本分区三角形），命中的 = 可见网格区，其质心即锚点；
@@ -103,7 +128,7 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
    * 完全可见（全部顶点在画布内）且质心可路由的分区免采样，直接钉全顶点质心（位置精确）。
    * 候选按离锚点距离升序逐个做路由验证（机器分区：名单序路由回本分区；无机器分区：落在网格上即可点），第一个通过即返回——最近的可触发点，可路由区全被盖死才扫完。
    * 候选只收画布内的点：画布外的露出点物理上点不到，搬过去等于没搬。
-   * 逐顶点变换与路由采样只在路由缓存重算时跑。返回落脚点的挂载信息：{ t, bary } = 三角形 t 的重心坐标（调用方每帧按当前顶点插值，点随呼吸/动作形变走）；{ centroid: true } = 每帧钉全顶点质心；null = 画布内采不到（整网格出画/可路由区全被盖死） */
+   * 逐顶点变换与路由采样只在路由缓存重算时跑。返回落脚点的挂载信息：{ t, bary } = 三角形 t 的重心坐标（调用方每帧按当前顶点插值，点随呼吸/动作形变走）；{ centroid: true } = 每帧钉全顶点质心；{ lost: 原因 } = 画布内采不到（出画 = 整网格在画布外，无采样 = 擦边且边界裁剪也采不到的非流形退化，被盖 = 可路由区全被名单序压过）——调用方只画框不出点（dotLost） */
   function resolveRoute(runtime, orch, name, loops, verts, indices, g, W, H, byRoute) {
     const inView = (p) => p.x >= 0 && p.y >= 0 && p.x <= W && p.y <= H
     const model = runtime.model
@@ -116,7 +141,7 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
       gv[j] = p
       if (inView(p)) nIn++
     }
-    if (!nIn) return null
+    if (!nIn) return { lost: '出画' }
     // 完全可见：质心可路由就钉质心（免采样，每帧重算跟随形变）；质心被盖（名单序被压过）走下面的采样
     if (nIn === nv && (!byRoute || routeWinner(runtime, orch, g.x, g.y) === name)) {
       return { centroid: true }
@@ -158,7 +183,22 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         }
       }
     }
-    if (!pts.length) return null
+    // 擦边细条带兜底：采样网格与边界中点全落空（网格与画布只交一条细缝），把边界边按画布矩形裁剪（Liang-Barsky），裁剩段中点必在网格边界上且在画布内
+    if (!pts.length) {
+      const edges = []
+      if (loops?.length) {
+        for (const loop of loops) {
+          for (let i = 0; i < loop.length; i++) edges.push([loop[i], loop[(i + 1) % loop.length]])
+        }
+      } else {
+        edges.push(...boundaryEdges(indices))
+      }
+      for (const [va, vb] of edges) {
+        const m = clipMidpoint(gv[va].x, gv[va].y, gv[vb].x, gv[vb].y, W, H)
+        if (m) pts.push(m)
+      }
+    }
+    if (!pts.length) return { lost: '无采样' }
     // 锚点 = 可见网格区质心；候选按离锚点升序逐个路由验证，第一个通过即返回
     let sx = 0
     let sy = 0
@@ -175,7 +215,7 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
       const lp = p.lp ?? model.toLocal(p)
       return attachTri(lp, verts, indices) ?? { centroid: true }
     }
-    return null
+    return { lost: '被盖' }
   }
 
   /** 分区名（hitArea Name，如 touch_drag23）-> 驱动参数名（如 touch_drag25）。
@@ -352,14 +392,24 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
       // 提示层直挂 stage，坐标 = 舞台全局 = 画布 CSS px；可视区即画布矩形
       const W = app.screen.width
       const H = app.screen.height
+      // 逐分区读数（HUD"交互点"组）：点 / 框无点 + 原因 / 被挡 / 出画，按真实现象分诊
+      const dotReads = []
       for (const h of hints) {
         // 标签 = 分区驱动的参数（见函数注释），逐帧解析：编排器随模型热切换
         // 网格名与反应编号错位的皮肤（shengluyisi_5 的 TouchDrag14 驱动 touch_drag21 等）标签里参数前带上分区名，才对得回分区
         const orch = getOrch?.()
         const hasMachine = !!orch?.machinesForZone(h.name).length
+        const verts = runtime.model.internalModel.getDrawableVertices(h.idx)
+        // 画布内顶点数：被挡/无路由分区据此分"出画（泊位上的标记，物理上点不到）"与"入画（点得到却被挡，门控嫌疑）"；也作路由缓存失效信号（见下）
+        let inView = 0
+        for (let j = 0; j < verts.length; j += 2) {
+          const p = runtime.model.toGlobal({ x: verts[j], y: verts[j + 1] })
+          if (p.x >= 0 && p.y >= 0 && p.x <= W && p.y <= H) inView++
+        }
         // 不可交互一律不画：机器分区不按透明度跳过（游戏路由是纯几何射线，隐藏但在位的标记照样可触发，见 gestures.js machineZonesAt 注释），被挡下/未实现触发类型的分区跳过；无机器分区才按隐藏网格跳过（C# 路径的命中层恒可见，此分支兜底摆位零件等）
         if (!hasMachine && (!hasOpacity || core.getDrawableOpacity(h.idx) <= 0.001)) {
           h.dot.visible = h.label.visible = false
+          dotReads.push({ name: h.name, status: '网格隐藏', bad: false })
           continue
         }
         // 判定与颜色分家时的两套判据（见函数注释）：机器分区看参数机的可触发条件（type 9 点参机 parameter 为空、读的是他参，不能挂在 params 上判），无机器分区看 interaction.json 的起播门控
@@ -367,11 +417,15 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         const interactable = hasMachine ? state === true : runtime.canPlay(h.name)
         if (!interactable) {
           h.dot.visible = h.label.visible = false
+          dotReads.push({
+            name: h.name,
+            status: inView ? (state === null ? '未实现:入画' : '挡:入画') : '挡:出画',
+            bad: inView > 0,
+          })
           continue
         }
         h.label.alpha = 0.85
         const params = zoneParams(orch, h.name)
-        const verts = runtime.model.internalModel.getDrawableVertices(h.idx)
         let cx = 0
         let cy = 0
         for (let j = 0; j < verts.length; j += 2) {
@@ -395,6 +449,7 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         // 路由结果按 idle 变体/在播动作缓存，变了才重算：缓存的是挂载信息（三角形重心坐标或质心锚），全局位置每帧随当前顶点重算，呼吸/动作形变时点跟着网格走；不追加"←胜者"文字标记：路由定案后点已搬走
         let spot = g
         let dotLost = false
+        let lostWhy = ''
         const isMachine = !!orch?.machineByZone(h.name)
         const offView = g.x < 0 || g.y < 0 || g.x > W || g.y > H
         if (isMachine || offView) {
@@ -404,12 +459,19 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
             routeKey = key
             routeMap.clear()
           }
-          if (!routeMap.has(h.name)) {
-            routeMap.set(h.name, resolveRoute(runtime, orch, h.name, loops, verts, indices, g, W, H, isMachine))
-          }
-          const r = routeMap.get(h.name)
+          // 缓存随姿态失效：标记网格由摆位参数驱动（不进上面的键），泊位↔上身切换时 idleIndex/playActionName 都不变，
+          // 只按动作键缓存会让旧路由长期滞留（泊位上算出的 lost 挂住，网格上身后面框在点不在）。
+          // 入画顶点数 + 质心位置变了即重算，呼吸形变（亚像素抖动）不触发
+          const sig = `${inView}|${Math.round(g.x)}|${Math.round(g.y)}`
+          const cached = routeMap.get(h.name)
+          let r = cached && cached.sig === sig ? cached.r : null
           if (!r) {
+            r = resolveRoute(runtime, orch, h.name, loops, verts, indices, g, W, H, isMachine)
+            routeMap.set(h.name, { r, sig })
+          }
+          if (r.lost) {
             dotLost = true
+            lostWhy = r.lost
           } else if (r.bary) {
             // 钉在网格面上（三角形重心坐标）：每帧按当前顶点插值，随呼吸/动作形变走，与绿框同一几何
             const i3 = r.t * 3
@@ -475,6 +537,8 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         // dotLost（出画/被盖且画布内采不到落脚点）只藏点与标签：物理上点不到的位置不画误导性的点，绿框上面已照画
         if (dotLost) {
           h.label.visible = false
+          // 出画 = 整网格在画布外（框也不可见，泊位标记常态）；无采样/被盖 = 框在画布上却没点，诊断重点
+          dotReads.push({ name: h.name, status: lostWhy === '出画' ? '无点:出画' : `框无点:${lostWhy}`, bad: lostWhy !== '出画' })
           continue
         }
         h.label.visible = true
@@ -482,6 +546,7 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
         h.dot.drawCircle(spot.x, spot.y, 9)
         h.dot.endFill()
         h.label.position.set(spot.x + 12, spot.y - 7)
+        dotReads.push({ name: h.name, status: isMachine || offView ? '点' : '点:质心', bad: false })
       }
       const state = [...runtime.statePids].map((pid) => [
         pid,
@@ -495,7 +560,7 @@ export function createInteractionHints(app, getRuntime, getVisible, getOrch = nu
             runtime.eps,
         )
         .map((pid) => [pid, runtime.node.get(pid)])
-      return { state, carried, rings: ringReads }
+      return { state, carried, rings: ringReads, dots: dotReads }
     },
   }
 }
