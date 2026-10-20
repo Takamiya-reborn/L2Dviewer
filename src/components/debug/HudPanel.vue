@@ -75,6 +75,30 @@ function pickParam(hud, p) {
   if (!hud.override.list.some((e) => e.id === p.id)) hud.override.set(p.id, p.value)
 }
 
+// 状态分区读数（hud.zones）：开关参数非 0 即在亮，"只看亮着"过滤熄灭行（排查当前哪个分区在生效）
+const onlyLit = ref(false)
+function litZones(hud) {
+  return (hud?.zones ?? []).filter(([, v]) => Math.abs(v) > 1e-4)
+}
+
+// 状态读数分组：去尾数字得组名（与注入清单同法），组内自然排序
+function groupedPairs(pairs) {
+  const groups = []
+  const byName = new Map()
+  for (const [id, value] of pairs) {
+    const name = id.replace(/\d+$/, '') || id
+    let g = byName.get(name)
+    if (!g) {
+      g = { name, items: [] }
+      byName.set(name, g)
+      groups.push(g)
+    }
+    g.items.push({ id, value })
+  }
+  for (const g of groups) g.items.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }))
+  return groups
+}
+
 // 判定门刻度：区间端点映射到 [lo,hi] 全程的百分比
 function spanPct(gate, v) {
   const span = gate.hi - gate.lo
@@ -234,15 +258,37 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
       </div>
     </div>
 
-    <!-- 状态：状态参数 + 非默认残留 -->
+    <!-- 状态：状态分区参数 + 摆位残留，按注入清单的分组网格平铺；
+         分区亮着才有排查价值（暖色值），残留必离默认值（恒暖色），收起时头部留残留计数 -->
     <div v-if="hud.zones.length || hud.carried.length" class="group" :class="{ open: open.state }">
-      <button class="group-head" type="button" @click="toggleGroup('state')">
-        <ChevronRight class="tri" :class="{ open: open.state }" :size="12" />状态
-        <span v-if="!open.state" class="dim">{{ hud.zones.length + hud.carried.length }} 项</span>
-      </button>
+      <div class="inject-head">
+        <button class="group-head" type="button" @click="toggleGroup('state')">
+          <ChevronRight class="tri" :class="{ open: open.state }" :size="12" />状态
+          <span v-if="!open.state" class="dim">{{ hud.carried.length }} 残留</span>
+        </button>
+        <label class="debug-pair inject-only"><input v-model="onlyLit" type="checkbox">只看亮着</label>
+        <span class="debug-pair dim">{{ litZones(hud).length }}/{{ hud.zones.length }}</span>
+      </div>
       <div class="group-body">
-        <span v-for="([k, v], i) in hud.zones" :key="'z' + i" class="debug-pair">{{ k }}={{ v }}</span>
-        <span v-for="([k, v], i) in hud.carried" :key="'c' + i" class="debug-pair dim">{{ k }}={{ v }}</span>
+        <div class="param-list">
+          <template v-for="g in groupedPairs(onlyLit ? litZones(hud) : hud.zones)" :key="'sz' + g.name">
+            <span class="param-group-head">{{ g.name }} ×{{ g.items.length }}</span>
+            <div class="param-grid">
+              <span v-for="p in g.items" :key="'sp' + p.id" class="param-cell"
+                :class="{ off: Math.abs(p.value) > 1e-4 }">
+                <span class="cell-id">{{ p.id }}</span><span class="cell-val">{{ p.value.toFixed(2) }}</span>
+              </span>
+            </div>
+          </template>
+          <template v-if="hud.carried.length">
+            <span class="param-group-head">残留 ×{{ hud.carried.length }}</span>
+            <div class="param-grid">
+              <span v-for="([id, value], i) in hud.carried" :key="'sc' + i" class="param-cell off">
+                <span class="cell-id">{{ id }}</span><span class="cell-val">{{ value.toFixed(2) }}</span>
+              </span>
+            </div>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -417,7 +463,9 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
   /* 右缘 40px：避开状态触发收起后探进屏幕 32px 的圆钮把手 */
   right: 40px;
   bottom: 44px;
-  max-width: 46%;
+  /* 定宽：收缩适配链路里 auto-fill 网格在可用宽度不定时按"全格单行"取 max-content，
+     面板会被一路顶到上限；定宽后状态/注入两块面板同宽稳定，网格按实际宽度分列 */
+  width: min(660px, 46%);
   max-height: calc(100vh - 60px);
   overflow-y: auto;
   display: flex;
@@ -624,14 +672,12 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
   margin: 0;
 }
 
-/* 注入备选参数清单：分组网格平铺 + 超高滚动，点格注入。
-   宽度占满面板，min-width 兜底：面板随内容收缩时清单不撑宽就只剩一列 */
+/* 注入备选参数清单：分组网格平铺 + 超高滚动，点格注入；宽度占满面板（stack 已定宽，网格分列稳定） */
 .param-list {
   display: flex;
   flex-direction: column;
   gap: 3px;
   width: 100%;
-  min-width: min(660px, calc(46vw - 24px));
   max-height: 420px;
   overflow-y: auto;
   pointer-events: auto;

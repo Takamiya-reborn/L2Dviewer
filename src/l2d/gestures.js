@@ -1,4 +1,4 @@
-/** 指针手势状态机（原生 DOM 事件，模拟 Unity 端控制器）：视线目标是当前指针位置，悬停即跟随、松手保持（游戏 Live2dChar 每帧以指针位置平滑刷新 look 目标，不依赖按压也不回零）；松手时位移小于阈值算点击、否则算拖拽（触发 touch_drag 分区而非 touch_idle 分区）。按下先尝试机器分区分流（拖拽参数机接管），未消费再走 meshHitTest 精确命中 -> 状态机播放路径。读 ctx.app / ctx.model / ctx.orch / ctx.dragScale / ctx.actions.handleHitAreas，写 ctx.lastGesture。 */
+/** 指针手势状态机（原生 DOM 事件，模拟 Unity 端控制器）：视线目标是当前指针位置，按住才跟随、松手回正（focusController 内部缓动过渡）；松手时位移小于阈值算点击、否则算拖拽（触发 touch_drag 分区而非 touch_idle 分区）。按下先尝试机器分区分流（拖拽参数机接管），未消费再走 meshHitTest 精确命中 -> 状态机播放路径。读 ctx.app / ctx.model / ctx.orch / ctx.dragScale / ctx.actions.handleHitAreas，写 ctx.lastGesture。 */
 import { meshHitTest } from '../utils/interaction'
 
 // 游戏内：松手时位移小于阈值算点击、否则算拖拽
@@ -59,7 +59,7 @@ export function createGestures(ctx) {
     return machineZonesAt(x, y)[0] ?? ''
   }
 
-  /** 视线跟随指针（悬停与按住都跟随，游戏 look 目标每帧取指针位置） */
+  /** 视线跟随指针（仅按住期间跟随） */
   function followGaze(x, y) {
     ctx.model?.focus(x, y)
   }
@@ -97,9 +97,9 @@ export function createGestures(ctx) {
 
   function onPointerMove(e) {
     const { x, y } = pointerPos(e)
-    // 视线与按压解耦：悬停即跟随（松手也不回零，眼值维持非零才能驱动胸部系物理输出口）
-    followGaze(x, y)
     if (!pressing) return
+    // 视线只在按住期间跟随
+    followGaze(x, y)
     maxDist = Math.max(maxDist, Math.hypot(x - downX, y - downY))
     if (!dragging && maxDist > GAZE_START_THRESHOLD) dragging = true
     // 按住期间拖拽参数机持续驱动（游戏 onPointDrag 对全部机器广播）
@@ -109,6 +109,8 @@ export function createGestures(ctx) {
   function onPointerUp(e) {
     if (!pressing) return
     pressing = false
+    // 松手视线回正：焦点归零，focusController 内部缓动过渡
+    resetGaze()
     // 换模型窗口期 ctx.model 已指向未揭幕的新模型，不可交互
     if (!ctx.model?.visible) return
     const { x, y } = pointerPos(e)
@@ -140,7 +142,7 @@ export function createGestures(ctx) {
   function onPointerCancel() {
     if (!pressing) return
     pressing = false
-    if (dragging) resetGaze()
+    resetGaze()
     // 拖拽被系统打断（移出画布等）：机器按压作废，不构成点击
     ctx.orch?.onCancel()
   }

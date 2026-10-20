@@ -9,7 +9,7 @@
 
 选项:
     --host [host:port] 先 adb connect（模拟器地址）
-    --serial ADDR   指定 adb -s 设备（多设备时用）
+    --serial ADDR   指定 adb -s 设备（仅多台不同设备时需要；同一设备多路连接自动收敛）
     --package PKG   手动指定游戏包名（默认从 pm list packages 里自动匹配 azurlane）
     --dest DIR      bundle 落盘目录（默认 .tmp/bundles/）
     --force         本地已存在也重拉（默认大小一致即跳过，可断点续传）
@@ -41,7 +41,7 @@ def adb(*args, serial=None):
     if serial:
         cmd += ["-s", serial]
     cmd += list(args)
-    r = subprocess.run(cmd, capture_output=True, text=False)
+    r = subprocess.run(cmd, check=False, capture_output=True, text=False)
     out = r.stdout.decode("utf-8", "replace")
     err = r.stderr.decode("utf-8", "replace")
     if r.returncode != 0:
@@ -52,6 +52,47 @@ def adb(*args, serial=None):
 def die(msg):
     print(f"错误: {msg}", file=sys.stderr)
     sys.exit(1)
+
+
+def device_identity(serial):
+    """取设备硬件序列号，把同一设备的多路连接（USB/TCP/无线调试）归并到一起。"""
+    for prop in ("ro.serialno", "ro.boot.serialno"):
+        out = adb("shell", "getprop", prop, serial=serial).strip()
+        if out:
+            return out
+    return serial
+
+
+def resolve_serial(explicit=None, host=None):
+    """不指定 --serial 时自动选定设备；同一物理设备的重复条目收敛为一台。"""
+    if explicit:
+        return explicit
+    out = adb("devices", "-l")
+    entries = []
+    for ln in out.replace("\r", "").splitlines():
+        parts = ln.split()
+        if len(parts) >= 2 and parts[1] in ("device", "offline", "unauthorized"):
+            entries.append((parts[0], parts[1]))
+    online = [s for s, st in entries if st == "device"]
+    if not online:
+        states = ", ".join(f"{s}({st})" for s, st in entries) or "列表为空"
+        die(f"没有处于 device 状态的设备（{states}）；模拟器请先 --host 连接")
+    groups = {}
+    for s in online:
+        groups.setdefault(device_identity(s), []).append(s)
+    if len(groups) > 1:
+        listing = "\n".join(f"  {s}" for s in online)
+        die(f"检测到多台不同设备，请用 --serial 指定其一:\n{listing}")
+    cands = next(iter(groups.values()))
+    if host and host in cands:
+        return host
+    # 同一设备 USB/TCP 并存时优先 USB（serial 不含冒号），拉取更快更稳
+    cands.sort(key=lambda s: (":" in s, s))
+    chosen = cands[0]
+    if len(cands) > 1:
+        others = ", ".join(s for s in cands if s != chosen)
+        print(f"多路连接收敛到 {chosen}（其余: {others}）")
+    return chosen
 
 
 def remote_size(adb_out_lsl_line):
@@ -138,11 +179,12 @@ def main():
     if not ADB.exists():
         die(f"未找到 {ADB}")
     if args.host:
-        print(adb("connect", args.host, serial=args.serial).strip())
+        print(adb("connect", args.host).strip())
     if not any([args.skin_ids, args.all, args.list is not None, args.index]):
         ap.error("需要皮肤 id 或 --all / --list / --index 之一")
 
-    package = detect_package(args.serial, args.package)
+    serial = resolve_serial(args.serial, args.host)
+    package = detect_package(serial, args.package)
     print(f"包名: {package}")
 
     tmp = ROOT / ".tmp"
@@ -151,14 +193,14 @@ def main():
     dest.mkdir(parents=True, exist_ok=True)
 
     if args.list is not None:
-        bundles = list_remote_bundles(args.serial, package, args.list or None)
+        bundles = list_remote_bundles(serial, package, args.list or None)
         for name, size in bundles:
             print(f"{size:>12}  {name}" if size is not None else f"{'?':>12}  {name}")
         print(f"-- 共 {len(bundles)} 个", file=sys.stderr)
         return
 
     if not args.index:
-        bundles = list_remote_bundles(args.serial, package)
+        bundles = list_remote_bundles(serial, package)
         by_name = dict(bundles)
         if args.all:
             targets = sorted(by_name)
@@ -187,7 +229,7 @@ def main():
                 pull_one(
                     f"/sdcard/Android/data/{package}/{REMOTE_FILES_DIR}/{name}",
                     local,
-                    args.serial,
+                    serial,
                 )
                 ok += 1
                 print(f"拉取 {name} ({local.stat().st_size / 1e6:.1f} MB)")
@@ -196,7 +238,7 @@ def main():
                 print(f"失败 {name}", file=sys.stderr)
         print(f"完成: 拉取 {ok}，跳过 {skip}，失败 {fail} -> {dest}")
 
-    sync_index(args.serial, package, tmp)
+    sync_index(serial, package, tmp)
 
 
 if __name__ == "__main__":

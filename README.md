@@ -106,13 +106,15 @@ npm install
 python -m pip install -r requirements.txt # 也可按上方说明使用 uv 或 .venv
 
 # 2. 从设备拉取皮肤 bundle（模拟器 adb 地址按需调整）
-uv run scripts/pull_bundles.py <skin_id> --host [host:port]
+#    如果不知道皮肤id是什么就使用 --list <关键词>
+#    资源关键词就直接是拼音拼的
+#    比如: uv run script/pull_bundles.py --list wuzang
+uv run scripts/pull_bundles.py <skin_id>
 
 # 3. 拉取游戏 Lua 快照（路径固定 .tmp/lua/<服务器>/，extract.py 自动读取；
 #    默认 CN，--server JP 拉日本服；
 #    文件清单与目录结构见 docs/azurlane.md 第 1 节；来源 AzurLaneLuaScripts，
 #    需要代理时用 --proxy 或 HTTPS_PROXY 环境变量）
-#    仅基础交互（点击门控、拖拽视线）不需要它
 python scripts/pull_lua.py
 
 # 4. 解包重组为标准 Cubism 模型（v4/v5），并自动烘焙 ship_l2d 交互配置

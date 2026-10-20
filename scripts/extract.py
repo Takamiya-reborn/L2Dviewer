@@ -138,12 +138,14 @@ def crc32(s: str) -> int:
     return zlib.crc32(s.encode("utf-8")) & 0xFFFFFFFF
 
 
-# 曲线 attribute 也是 CRC32 哈希，本游戏只用两种：
-#   Value   -> 参数曲线（Target: Parameter）
-#   Opacity -> 部件不透明度曲线（Target: PartOpacity）
+# 曲线 attribute 也是 CRC32 哈希，本游戏用到三种：
+#   Value         -> 参数曲线（Target: Parameter）
+#   Opacity       -> 部件不透明度曲线（Target: PartOpacity；根对象 CubismRenderController 的整模型透明度单独特判）
+#   MouthOpening  -> 根对象 CubismMouthController.MouthOpening，游戏 LateUpdate 按 BlendMode 覆写口参数，迁移为口参数的参数曲线
 # 其余 attribute 视为未知，跳过并告警（原始绑定保留在 inventory.json）
 CRC_VALUE = zlib.crc32(b"Value") & 0xFFFFFFFF
 CRC_OPACITY = zlib.crc32(b"Opacity") & 0xFFFFFFFF
+CRC_MOUTH = zlib.crc32(b"MouthOpening") & 0xFFFFFFFF
 
 
 def build_hierarchy(env):
@@ -194,13 +196,15 @@ def resolve_hash_bindings(env, param_cls_names=("CubismParameter",)):
     infos, _roots = build_hierarchy(env)
     path_hash = {}
     for name, full, _gopid in infos.values():
-        # 绑定路径相对 Animator 根, 通常不含根对象名
+        # 绑定路径相对 Animator 根, 通常不含根对象名；大小写变体一并入表（hash 侧不做大小写归一）
         if "/" in full:
             rel = full.split("/", 1)[1]
             path_hash[crc32(rel)] = rel
             path_hash[crc32(rel.lower())] = rel
         path_hash[crc32(full)] = full
+        path_hash[crc32(full.lower())] = full
         path_hash[crc32(name)] = name
+        path_hash[crc32(name.lower())] = name
     return scripts, path_hash, infos
 
 
@@ -239,8 +243,8 @@ def moc3_param_tables(moc3_bytes: bytes, n_params: int):
 # ---------------------------------------------------------------- 提取
 
 
-def convert_clip(clip, bindings, path_hash, duration_hint=None):
-    """AnimationClip -> motion3 曲线列表 [{id, target, segments}]。"""
+def convert_clip(clip, bindings, path_hash, duration_hint=None, root_targets=None):
+    """AnimationClip -> motion3 曲线列表 [{id, target, segments}]。root_targets: 根对象(path=0) attribute -> (迁移目标 id, target)。"""
     mc = clip.m_MuscleClip
     clip_data = mc.m_Clip.data
 
@@ -253,7 +257,9 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
 
     # 绑定 index -> (id, target)；同时统计静默丢失来源，收尾统一告警
     curve_meta = {}
+    late_names = set()  # 根对象迁移曲线（游戏侧 LateUpdate 覆写语义），排序须落在同目标组末位
     unresolved = 0
+    unresolved_hashes = []
     unknown_attr = {}
     for i, b in enumerate(bindings):
         rel = path_hash.get(b.path)
@@ -263,8 +269,14 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
             # pixi-live2d-display 内置 Framework 解析不报错但 apply 时忽略 Model/Opacity（只认 EyeBlink/LipSync），恒 1 值无渲染影响。
             if b.path == 0 and b.attribute == CRC_OPACITY:
                 curve_meta[i] = ("Opacity", "Model")
+            # 其余根对象绑定按迁移表翻成参数曲线（如 MouthOpening -> 口参数）；curve_meta 单绑定单曲线，标记参数取第一个
+            elif b.path == 0 and root_targets and b.attribute in root_targets:
+                name, target = root_targets[b.attribute]
+                curve_meta[i] = (name, target)
+                late_names.add(name)
             else:
                 unresolved += 1
+                unresolved_hashes.append(b.path)
             continue
         name = rel.split("/")[-1]
         if b.attribute == CRC_VALUE:
@@ -361,13 +373,19 @@ def convert_clip(clip, bindings, path_hash, duration_hint=None):
         curves.append({"Id": name, "Target": target, "Segments": segs})
 
     if unresolved:
-        print(f"[warn] {clip.m_Name}: {unresolved} 条绑定路径哈希未解析，曲线被跳过")
+        # 告警带哈希样本：拿哈希对参数/部件名暴力撞库即可定案该曲线是否模型对象（inventory.json 同存原始绑定）
+        sample = " ".join(f"{h:08x}" for h in unresolved_hashes[:6])
+        more = f" ...共{unresolved}条" if unresolved > 6 else ""
+        print(
+            f"[warn] {clip.m_Name}: {unresolved} 条绑定路径哈希未解析({sample}{more})，曲线被跳过"
+        )
     for h, n in unknown_attr.items():
         print(f"[warn] {clip.m_Name}: {n} 条未知 attribute 0x{h:08x}，曲线被跳过")
 
     # Cubism 内核按曲线类型顺序求值（Model→Parameter→PartOpacity 三段循环，遇类型切换即停），目标混排会让其后同型曲线整体失效，按官方约定分组排序（稳定排序，同目标内相对次序不变）
+    # 根对象迁移曲线（如口参数）排参数组末位：游戏侧是 LateUpdate 覆写，须晚于动作对口参数的直接写入
     target_rank = {"Model": 0, "Parameter": 1, "PartOpacity": 2}
-    curves.sort(key=lambda c: target_rank.get(c["Target"], 1))
+    curves.sort(key=lambda c: (target_rank.get(c["Target"], 1), c["Id"] in late_names))
 
     duration = max(
         (max(c["Segments"][0], c["Segments"][-2]) for c in curves), default=0.0
@@ -555,14 +573,14 @@ def animator_routing(env) -> dict | None:
 
     entries = []  # (state_name, conditions[[hash,mode,threshold]...], clip)
     for sm in ctrl["m_Controller"]["m_StateMachineArray"]:
-        smd = sm["data"] if "data" in sm else sm
+        smd = sm.get("data", sm)
         # AnyState 转移与状态按下标对位（m_DestinationState 即状态数组下标）
         any_trans = {
             t["data"]["m_DestinationState"]: t["data"]
             for t in smd.get("m_AnyStateTransitionConstantArray", [])
         }
         for i, st in enumerate(smd.get("m_StateConstantArray", [])):
-            sd = st["data"] if "data" in st else st
+            sd = st.get("data", st)
             name = tos.get(sd.get("m_FullPathID"), f"state{i}").split(".")[-1]
             conds = []
             td = any_trans.get(i)
@@ -649,18 +667,18 @@ def animator_fades(env) -> dict | None:
 
     transitions = {}
     for sm in ctrl["m_Controller"]["m_StateMachineArray"]:
-        smd = sm["data"] if "data" in sm else sm
+        smd = sm.get("data", sm)
         arr = smd.get("m_StateConstantArray", [])
         names = {
-            i: tos.get(
-                (st["data"] if "data" in st else st).get("m_FullPathID"), f"state{i}"
-            ).split(".")[-1]
+            i: tos.get((st.get("data", st)).get("m_FullPathID"), f"state{i}").split(
+                "."
+            )[-1]
             for i, st in enumerate(arr)
         }
         # 状态 -> 本状态 blend tree 全部节点的 clip 名
         clips = {}
         for i, st in enumerate(arr):
-            sd = st["data"] if "data" in st else st
+            sd = st.get("data", st)
             for bti in sd.get("m_BlendTreeConstantIndexArray") or []:
                 if bti is None or bti < 0:
                     continue
@@ -711,7 +729,11 @@ def inject_physics_normalization(text: str, rig: dict) -> str:
         return text
     subs = rig.get("SubRigs") or []
     settings = data.get("PhysicsSettings")
-    if not isinstance(settings, list) or not isinstance(subs, list) or len(settings) != len(subs):
+    if (
+        not isinstance(settings, list)
+        or not isinstance(subs, list)
+        or len(settings) != len(subs)
+    ):
         print(
             f"[warn] physics3 与 _rig 设置数不齐({len(settings) if isinstance(settings, list) else '?'}/{len(subs)})，跳过 Normalization 注入"
         )
@@ -719,7 +741,9 @@ def inject_physics_normalization(text: str, rig: dict) -> str:
     for setting, sub in zip(settings, subs):
         norm = sub.get("Normalization")
         if not isinstance(norm, dict) or "Position" not in norm or "Angle" not in norm:
-            print(f"[warn] _rig 设置 {sub.get('Name')} 缺 Normalization，放弃注入落原文")
+            print(
+                f"[warn] _rig 设置 {sub.get('Name')} 缺 Normalization，放弃注入落原文"
+            )
             return text
         setting["Normalization"] = norm
     return json.dumps(data, ensure_ascii=False, indent=2)
@@ -919,7 +943,7 @@ def main() -> None:
 
     env = UnityPy.load(str(bundle))
 
-    scripts, path_hash, infos = resolve_hash_bindings(env)
+    scripts, path_hash, _infos = resolve_hash_bindings(env)
     go_names = {}
     for obj in env.objects:
         if obj.type.name == "GameObject":
@@ -933,6 +957,8 @@ def main() -> None:
     param_names = []
     mono_records = []  # inventory: 全部 MonoBehaviour (path_id, 脚本类名, typetree)
     params_ui = {}  # CubismParameter _unmanagedIndex -> 参数 id（GO 名即参数 id）
+    mouth_ctrl = None  # CubismMouthController typetree（根对象，动作可动画其 MouthOpening 字段）
+    mouth_params = []  # CubismMouthParameter 标记的参数 id（口控制器 Destinations，即 MouthOpening 的实际写入口）
     for obj in env.objects:
         tname = obj.type.name
         if tname == "Texture2D":
@@ -967,6 +993,13 @@ def main() -> None:
                 raycastables.append(go_names.get(gid, f"mesh_{obj.path_id}"))
             elif cls == "CubismDisplayInfoParameterName":
                 param_names.append(tree.get("m_Name"))
+            elif cls == "CubismMouthController" and mouth_ctrl is None:
+                mouth_ctrl = tree
+            elif cls == "CubismMouthParameter":
+                gid = tree["m_GameObject"]["m_PathID"]
+                pid = go_names.get(gid)
+                if pid is not None:
+                    mouth_params.append(pid)
             elif cls == "CubismParameter":
                 gid = tree["m_GameObject"]["m_PathID"]
                 pid = go_names.get(gid)
@@ -990,6 +1023,17 @@ def main() -> None:
     else:
         print("[warn] moc3 参数表(min/max/defaults)解析失败，跳过 defaults.json")
     param_ranges = defaults if tables else None
+
+    # 根对象 MouthOpening 曲线迁移目标：CubismMouthParameter 标记的参数（游戏 LateUpdate 按 BlendMode 覆写口参数）
+    # BlendMode 只有 Override(0) 能表达为参数曲线（直接覆写），Additive/Multiply 与动作混合语义无法在 motion3 落笔，不迁移
+    root_targets = {}
+    if mouth_ctrl and mouth_params:
+        if mouth_ctrl.get("BlendMode", 0) != 0:
+            print("[warn] CubismMouthController.BlendMode 非 Override，MouthOpening 曲线不迁移")
+        else:
+            if len(mouth_params) > 1:
+                print(f"[warn] 口参数标记多个({','.join(mouth_params)})，只迁移第一个")
+            root_targets[CRC_MOUTH] = (mouth_params[0], "Parameter")
 
     for name, raw in text_assets.items():
         try:
@@ -1016,7 +1060,7 @@ def main() -> None:
             continue
         clip = obj.read()
         bindings = clip.m_ClipBindingConstant.genericBindings
-        curves, duration = convert_clip(clip, bindings, path_hash)
+        curves, duration = convert_clip(clip, bindings, path_hash, root_targets=root_targets)
         # 交互状态机数据：AnimationEvent + 开关型/连续型参数的首末值（见函数注释）
         events = clip_events(clip)
         boundary, carry = clip_boundary_state(clip, path_hash, param_ranges)
