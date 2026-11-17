@@ -40,14 +40,14 @@
 
 ## 技术栈
 
-| 层         | 技术                               | 用途                                                  |
-| ---------- | ---------------------------------- | ----------------------------------------------------- |
-| 前端框架   | Vue 3 + Vite                       | 图鉴页面与皮肤清单                                    |
-| 渲染       | PixiJS + pixi-live2d-display       | L2D 舞台渲染（Cubism 4/5 模型）                       |
+| 层         | 技术                               | 用途                                                                   |
+| ---------- | ---------------------------------- | ---------------------------------------------------------------------- |
+| 前端框架   | Vue 3 + Vite                       | 图鉴页面与皮肤清单                                                     |
+| 渲染       | PixiJS + pixi-live2d-display       | L2D 舞台渲染（Cubism 4/5 模型）                                        |
 | 提取工具链 | Node + unityfs-js                  | 解包 UnityFS、读 moc3/贴图/动画曲线（ASTC 贴图 texture2ddecoder-wasm） |
-| 动画转换   | Unity AnimationClip → motion3.json | 关键帧曲线换算 Cubism 贝塞尔段                        |
-| 逆向参考   | Il2CppDumper                       | dump 游戏 C# 程序集（逆向期语义参考，使用流程不需要） |
-| 资源采集   | adb                                | 从模拟器/设备拉取游戏资源                             |
+| 动画转换   | Unity AnimationClip → motion3.json | 关键帧曲线换算 Cubism 贝塞尔段                                         |
+| 逆向参考   | Il2CppDumper                       | dump 游戏 C# 程序集（逆向期语义参考，使用流程不需要）                  |
+| 资源采集   | adb                                | 从模拟器/设备拉取游戏资源                                              |
 
 ## 查看器实现
 
@@ -65,7 +65,7 @@
 ## 项目结构
 
 ```
-scripts/              # 提取脚本：pull_bundles.js（资源拉取）、pull_lua.js（Lua 快照拉取）、extract.js + extract/（解包重组并烘焙交互配置与 fades.json）；pull_cs.js / disasm.js 为逆向期 C# 语义核对（使用流程不需要）
+scripts/              # 提取脚本：pull_bundles.js（资源拉取）、pull_lua.js（Lua 快照拉取）、extract.js + extract/（解包重组并烘焙交互配置与 fades.json）、gen_catalog.js（皮肤目录生成）；pull_cs.js / disasm.js 为逆向期 C# 语义核对（使用流程不需要）
 tools/adb/            # Android 平台工具（Apache 2.0，NOTICE 随目录分发）
 tools/Il2CppDumper/   # 游戏 C# 程序集 dump 工具（MIT，逆向期参考，仅保留 x64 主程序与 config.json）
 models/               # 导出的标准 Cubism 模型（moc3 v4/v5），按 <角色>/<皮肤id> 两级目录组织（不入库）
@@ -79,7 +79,18 @@ src/                  # Vue 前端（图鉴 + L2D 舞台 + 交互层）
 
 ## 使用
 
-想使用查看器，把下面几个脚本按顺序跑一遍即可，文件处理全程自动，无需手工登记。提取工具链是纯 Node，`npm install` 一次即可：
+### 图形界面（推荐）
+
+```bash
+npm install
+npm run dev
+```
+
+打开页面后左侧皮肤列表展示全部皮肤的显示名（来自仓库内 `public/catalog.json` 目录），可按阵营（白鹰/皇家/重樱等，对齐游戏内筛选）与资源状态（已烘焙/已缓存/未拉取）过滤：资源在盘的条目为绿色，点击直接加载；未拉取条目点击后弹层确认（展示当前 adb 连接的设备），确认后 dev server 自动完成"设备拉取 bundle → 解包烘焙 → 加载"全流程，完成后条目转绿并自动上屏。需要模拟器/手机以 adb 连接。
+
+### 命令行
+
+想用命令行把脚本按顺序跑一遍也可以，文件处理全程自动，无需手工登记：
 
 ```bash
 # 1. 安装依赖
@@ -105,6 +116,16 @@ npm run dev       # dev server 实时扫描 models/ 生成皮肤清单，新增�
 ```
 
 以上流程不涉及 `tools/Il2CppDumper/`：它是逆向期理解游戏 C# 语义的参考工具（见 [azurlane.md](docs/azurlane.md)“逆向参考文件”），跑通查看器用不到，`tools/adb/` 则由第 2 步的 `pull_bundles.js` 调用。
+
+### 皮肤目录维护
+
+`public/catalog.json`（显示名 → bundle 名映射，纯名字元数据）由 `scripts/gen_catalog.js` 从游戏 Lua 快照与设备侧 live2d 索引生成。游戏版本更新后重新生成并提交：
+
+```bash
+node scripts/pull_bundles.js --index   # 刷新 .tmp/hashes-live2d.csv 等索引
+node scripts/pull_lua.js               # 刷新 .tmp/lua/ 快照
+node scripts/gen_catalog.js            # 重新生成 public/catalog.json
+```
 
 ## 测试
 

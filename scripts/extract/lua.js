@@ -28,8 +28,13 @@ class LuaParser {
         const char = this.text[this.pos]
         if (char === '{') return this.table()
         if (char === '"') {
-            const end = this.text.indexOf('"', this.pos + 1)
-            const value = this.text.slice(this.pos + 1, end)
+            let end = this.pos + 1
+            // 逐字符扫描，反斜杠连同转义字符一起跳过，避免 \" 提前截断字符串
+            while (end < this.text.length && this.text[end] !== '"') {
+                if (this.text[end] === '\\') end++
+                end++
+            }
+            const value = this.text.slice(this.pos + 1, end).replace(/\\(["\\])/g, '$1')
             this.pos = end + 1
             return value
         }
@@ -100,7 +105,8 @@ function readSkinTemplate(text, skinId) {
 
 function readTemplateByPainting(text, painting) {
     const matches = [...text.matchAll(LUA_TEMPLATE_RE)]
-    const lineRe = new RegExp(`^\\tpainting = "${painting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}",$`, 'gm')
+    // bundle 名全小写而模板 painting 可能含大写（Z46_2 / lafeiII_3），按不区分大小写匹配
+    const lineRe = new RegExp(`^\\tpainting = "${painting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}",$`, 'gmi')
     for (const line of text.matchAll(lineRe)) {
         const owners = matches.filter((m) => m.index < line.index)
         if (owners.length) {
@@ -109,6 +115,22 @@ function readTemplateByPainting(text, painting) {
         }
     }
     throw new Error(`ship_skin_template 中没有 painting ${painting}`)
+}
+
+// 按文件序解析全部皮肤模板条目的轻量字段（gen_catalog.js 构建目录用）。
+// painting 可为空串/缺省（普通立绘皮肤无 L2D），由调用方自行过滤。
+export function readAllSkinTemplates(text) {
+    const matches = [...text.matchAll(LUA_TEMPLATE_RE)]
+    return matches.map((match, index) => {
+        const template = luaBlock(text, matches, index)
+        return {
+            id: parseInt(match[1]),
+            name: template.name,
+            painting: template.painting,
+            ship_group: template.ship_group,
+            skin_type: template.skin_type,
+        }
+    })
 }
 
 function parseShipL2d(text, skinId) {

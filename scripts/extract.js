@@ -54,6 +54,8 @@ function charName(modelId) {
 
 const warn = (msg) => console.log(`[warn] ${msg}`)
 const info = (msg) => console.log(msg)
+// 管线进度里程碑：stdout 输出 [progress] <0-100> <阶段>，dev server 解析成 job.progress 透传前端进度条
+const progress = (pct, label) => info(`[progress] ${pct} ${label}`)
 
 // int64 路径 ID：安全整数落 number，超出的落十进制字符串（JS number 有精度上限，直写会失真）
 const jsonReplacer = (k, v) =>
@@ -107,6 +109,7 @@ async function main() {
     for (const info of bundle.byClass('GameObject')) {
         goNames.set(info.pathID, bundle.readTypetree(info).m_Name)
     }
+    progress(5, 'bundle 解析')
 
     // --- moc3 / 贴图 / physics / Live2dChar（同时收集全量 inventory 记录）
     const textureNames = []
@@ -166,12 +169,13 @@ async function main() {
     writeFileSync(join(outDir, `${modelId}.moc3`), mocBytes)
 
     // --- 贴图落盘（ASTC 走自补分支，其余交给 unityfs-js 解码管线）
-    for (const { info, name } of textureJobs) {
+    for (const [index, { info, name }] of textureJobs.entries()) {
         const tex = info.object
         const png = isAstcFormat(tex.textureFormat)
             ? (await decodeAstcTexture(tex, bundle.manager)).png
             : Buffer.from((await bundle.manager.exportFile(info, { type: 'uint8Array' })).data.raw)
         writeFileSync(join(outDir, 'textures', `${name}.png`), png)
+        progress(textureJobs.length ? 5 + Math.round(45 * (index + 1) / textureJobs.length) : 50, `贴图 ${index + 1}/${textureJobs.length}`)
     }
 
     // --- moc3 参数默认值/min/max（逆向状态机的初始态 = 默认态）
@@ -227,7 +231,9 @@ async function main() {
     const motionGroups = {}
     const interactionClips = {}
     const invClips = [] // inventory: 每个 AnimationClip 的事件与原始绑定
-    for (const info of bundle.byClass('AnimationClip')) {
+    const clips = [...bundle.byClass('AnimationClip')]
+    progress(55, '动作转换')
+    for (const [index, info] of clips.entries()) {
         const clip = bundle.readTypetree(info)
         const bindings = clip.m_ClipBindingConstant.genericBindings
         const { curves, duration } = convertClip(
@@ -269,6 +275,7 @@ async function main() {
         writeFileSync(join(outDir, 'motions', `${clip.m_Name}.motion3.json`), JSON.stringify(motion3Json(curves, duration, loop)))
         if (!motionGroups[group]) motionGroups[group] = []
         motionGroups[group].push({ File: `motions/${clip.m_Name}.motion3.json` })
+        progress(clips.length ? 55 + Math.round(35 * (index + 1) / clips.length) : 90, `动作 ${index + 1}/${clips.length}`)
     }
 
     // --- model3.json
@@ -340,15 +347,18 @@ async function main() {
     }
     // int64 路径 ID：安全整数落 number，超出的落十进制字符串（JS number 有精度上限，直写会失真）
     writeFileSync(join(outDir, `${modelId}.inventory.json`), JSON.stringify(inventory, jsonReplacer))
+    progress(95, '交互配置与清单')
 
     if (!args.noLua) {
         const skinRef = args.painting ?? (isFilePath(args.source) ? modelId : args.source)
+        progress(97, 'l2d 交互配置')
         try {
             bakeL2d(ROOT, outDir, modelId, args.server, skinRef, { info, warn })
         } catch (e) {
             warn(`l2d.json 烘焙失败，基础模型已完成: ${e.message}`)
         }
     }
+    progress(100, '完成')
 
     info(`完成: ${modelId}`)
     info(`  贴图 ${textureNames.length}, 动作组 ${JSON.stringify(Object.fromEntries(Object.entries(motionGroups).map(([k, v]) => [k, v.length])))}`)

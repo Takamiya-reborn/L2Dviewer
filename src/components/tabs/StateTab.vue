@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { PanelRightClose, PanelRightOpen, Play } from 'lucide-vue-next'
+import ScrollBar from '../ScrollBar.vue'
 
 defineProps({
   /** [{ id, label }] */
@@ -18,21 +19,23 @@ const collapsed = ref(true)
 
 <template>
   <aside class="trigger-tabs" :class="{ collapsed }">
-    <!-- 面板：蒙板式浮层，收起时整体滑出右缘 -->
+    <!-- 面板：蒙板式浮层，收起时整体滑出右缘；标题固定，滚动条只管列表区 -->
     <div class="panel">
       <h2 v-if="title" class="title">{{ title }}</h2>
-      <ul class="list">
-        <li v-for="item in items" :key="item.id">
-          <button class="card" :class="{ active: item.id === active }" type="button" @click="$emit('select', item.id)">
-            <span class="label">{{ item.label ?? item.id }}</span>
-            <span class="id">
-              <Play :size="14" />
-              {{ item.id }}
-            </span>
-          </button>
-        </li>
-      </ul>
-      <p v-if="!items.length" class="empty">该模型没有可触发的状态动作</p>
+      <ScrollBar :inset="6">
+        <ul class="list">
+          <li v-for="item in items" :key="item.id">
+            <button class="card" :class="{ active: item.id === active }" type="button" @click="$emit('select', item.id)">
+              <span class="label">{{ item.label ?? item.id }}</span>
+              <span class="id">
+                <Play :size="14" />
+                {{ item.id }}
+              </span>
+            </button>
+          </li>
+        </ul>
+        <p v-if="!items.length" class="empty">该模型没有可触发的状态动作</p>
+      </ScrollBar>
     </div>
     <!-- 把手：垂直居中骑在面板左缘（即侧栏与舞台的分界线），收起后仍留在屏幕内 -->
     <button class="toggle" type="button" :title="collapsed ? '展开状态触发' : '收起状态触发'" @click="collapsed = !collapsed">
@@ -61,27 +64,30 @@ const collapsed = ref(true)
 }
 
 .panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   border-left: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(16, 16, 20, 0.72);
   backdrop-filter: blur(12px);
 }
 
-/* 把手骑在面板左缘，随面板一起滑动 */
+/* 把手骑在面板左缘，随面板一起滑动；圆角矩形，向内伸 24px */
 .toggle {
   position: absolute;
   top: 50%;
-  left: -32px;
+  left: -24px;
   transform: translateY(-50%);
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 50%;
+  border-radius: 12px;
   background: rgba(16, 16, 20, 0.72);
   backdrop-filter: blur(12px);
   color: #8a8a93;

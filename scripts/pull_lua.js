@@ -32,10 +32,12 @@ const RAW = `https://raw.githubusercontent.com/${REPO}/${BRANCH}`;
 // 上游按服务器分目录，结构一致（CN/EN/JP/KR/TW）
 const SERVERS = ["CN", "EN", "JP", "KR", "TW"];
 
-// 必需：extract.js 的直接输入（相对服务器目录）
+// 必需：extract.js 的直接输入 + gen_catalog.js 的名字代换表与阵营筛选数据（相对服务器目录）
 const REQUIRED = [
   "sharecfg/ship_l2d.lua",
   "sharecfgdata/ship_skin_template.lua",
+  "sharecfg/name_code.lua",
+  "sharecfgdata/ship_data_statistics.lua",
 ];
 // 控制层：查看器交互语义的根修依据（live2d.lua 调 C#，live2ddrag.lua 是拖拽机本体），
 // 与 ship_l2d 同为默认清单——新皮肤一旦用到监听器/联动等边角语义，缺这份就得现拉

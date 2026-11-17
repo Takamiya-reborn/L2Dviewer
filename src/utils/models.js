@@ -11,15 +11,66 @@ import { reactive } from 'vue'
  */
 export const MODELS = reactive([])
 
-/** 拉取皮肤清单；失败时仅报错，视图以空清单渲染。 */
+/** 拉取皮肤清单（替换语义，重复调用幂等）；失败时仅报错，视图以空清单渲染。 */
 export async function loadModels() {
   try {
     const r = await fetch('/models/manifest.json')
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    MODELS.push(...(await r.json()))
+    MODELS.splice(0, MODELS.length, ...(await r.json()))
   } catch (err) {
     console.error('皮肤清单加载失败：请确认 models/ 下存在 <角色>/<皮肤>/<皮肤>.model3.json', err)
   }
+}
+
+/**
+ * 全量皮肤目录（gen_catalog.js 生成的显示名 -> bundle 名映射，覆盖 models/ 里
+ * 尚未烘焙的皮肤）。entries 元素 { painting, name, camp?, state }，state 是 dev
+ * server 合并的资源状态：baked=已烘焙可加载 / cached=bundle 已拉未烘焙 / remote=需拉取；
+ * painting 与烘焙清单的 id 同名，可直接作 activeId。
+ */
+export const CATALOG = reactive({ version: '', entries: [] })
+
+/** 拉取皮肤目录（dev server /api/catalog 在静态目录上合并实时资源状态）；失败仅报错，侧栏回退为只显示已烘焙清单。 */
+export async function loadCatalog() {
+  try {
+    const r = await fetch('/api/catalog')
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    const data = await r.json()
+    CATALOG.version = data.version ?? ''
+    CATALOG.entries = data.entries ?? []
+  } catch (err) {
+    console.error('皮肤目录加载失败：侧栏将只显示已烘焙的皮肤', err)
+  }
+}
+
+/**
+ * 阵营显示名，对齐游戏内皮肤筛选的叫法（键 = ship_data_statistics 的 nationality）。
+ * 晶环联盟的码暂未出现在任何数据中，出现前归入"其他"。
+ */
+export const CAMP_LABELS = {
+  1: '白鹰',
+  2: '皇家',
+  3: '重樱',
+  4: '铁血',
+  5: '东煌',
+  6: '撒丁帝国',
+  7: '北方联合',
+  8: '自由鸢尾',
+  9: '维希教廷',
+  11: '郁金王国',
+  96: '飓风',
+  97: 'META',
+}
+
+/** 阵营 chips 的展示顺序（对齐游戏内阵营筛选），未收录的码按出现序补在"其他"前 */
+export const CAMP_ORDER = [
+  '白鹰', '皇家', '重樱', '铁血', '东煌', '撒丁帝国', '北方联合',
+  '自由鸢尾', '维希教廷', '郁金王国', '晶环联盟', 'META', '飓风', '其他',
+]
+
+/** 目录条目的阵营 -> 显示名；联动/杂项 nationality（98/99/101~118 等）归"其他" */
+export function campLabel(camp) {
+  return CAMP_LABELS[camp] ?? '其他'
 }
 
 /**

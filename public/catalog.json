@@ -1,0 +1,1862 @@
+{
+  "version": "0.0.1605",
+  "entries": [
+    {
+      "painting": "junhe_4",
+      "name": "“不情愿”的圣夜祭",
+      "ship_group": 30514,
+      "skin_id": 305143,
+      "camp": 3
+    },
+    {
+      "painting": "dunkeerke_2",
+      "name": "“甜蜜”夏日",
+      "ship_group": 90401,
+      "skin_id": 904011,
+      "camp": 9
+    },
+    {
+      "painting": "aimierbeierding_3",
+      "name": "「女仆」浪漫",
+      "ship_group": 80201,
+      "skin_id": 802012,
+      "camp": 8
+    },
+    {
+      "painting": "aimierbeierding_3_hx",
+      "name": "「女仆」浪漫（婚变）",
+      "derived": true,
+      "camp": 8
+    },
+    {
+      "painting": "qiershazhi_2",
+      "name": "Allnight Charge",
+      "ship_group": 19904,
+      "skin_id": 199041,
+      "camp": 1
+    },
+    {
+      "painting": "linuo_3",
+      "name": "bunny·reno！",
+      "ship_group": 10226,
+      "skin_id": 102263,
+      "camp": 1
+    },
+    {
+      "painting": "linuo_3_hx",
+      "name": "bunny·reno！（婚变）",
+      "derived": true,
+      "camp": 1
+    },
+    {
+      "painting": "ailunsamuna_2",
+      "name": "Charming Rabbit",
+      "ship_group": 10145,
+      "skin_id": 101451,
+      "camp": 1
+    },
+    {
+      "painting": "ailunsamuna_2_hx",
+      "name": "Charming Rabbit（婚变）",
+      "derived": true,
+      "camp": 1
+    },
+    {
+      "painting": "aisaikesi_4",
+      "name": "Craft Fairytail",
+      "ship_group": 10709,
+      "skin_id": 107092,
+      "camp": 1
+    },
+    {
+      "painting": "nabulesi_2",
+      "name": "Dreamy Night",
+      "ship_group": 69902,
+      "skin_id": 699021,
+      "camp": 6
+    },
+    {
+      "painting": "mingji_2",
+      "name": "Electric Affection",
+      "ship_group": 30229,
+      "skin_id": 302291,
+      "camp": 3
+    },
+    {
+      "painting": "ougen_5",
+      "name": "Final Lap",
+      "ship_group": 40303,
+      "skin_id": 403034,
+      "camp": 4
+    },
+    {
+      "painting": "bulaimodun_2",
+      "name": "Happy Dating！",
+      "ship_group": 10324,
+      "skin_id": 103243,
+      "camp": 1
+    },
+    {
+      "painting": "xukufu_3",
+      "name": "Loisirs balnéaires",
+      "ship_group": 80801,
+      "skin_id": 808012,
+      "camp": 8
+    },
+    {
+      "painting": "xukufu_3_hx",
+      "name": "Loisirs balnéaires（婚变）",
+      "derived": true,
+      "camp": 8
+    },
+    {
+      "painting": "shengluyisi_4",
+      "name": "Luxury Handle",
+      "ship_group": 10213,
+      "skin_id": 102133,
+      "camp": 1
+    },
+    {
+      "painting": "yilishabai_6",
+      "name": "Maid·My·Highness",
+      "ship_group": 20501,
+      "skin_id": 205015,
+      "camp": 2
+    },
+    {
+      "painting": "chuixue_3",
+      "name": "Music Pixy",
+      "ship_group": 30101,
+      "skin_id": 301013,
+      "camp": 3
+    },
+    {
+      "painting": "wuerlixi_2",
+      "name": "Mädchen Trümmer",
+      "ship_group": 40503,
+      "skin_id": 405031,
+      "camp": 4
+    },
+    {
+      "painting": "fulici_2",
+      "name": "Schwarzes Kaninchen",
+      "ship_group": 40704,
+      "skin_id": 407041,
+      "camp": 4
+    },
+    {
+      "painting": "heitaizi_2",
+      "name": "White Princess",
+      "ship_group": 20224,
+      "skin_id": 202241,
+      "camp": 2
+    },
+    {
+      "painting": "qiye_7",
+      "name": "Wind Catcher",
+      "ship_group": 10706,
+      "skin_id": 107066,
+      "camp": 1
+    },
+    {
+      "painting": "qiye_7_hx",
+      "name": "Wind Catcher（婚变）",
+      "derived": true,
+      "camp": 1
+    },
+    {
+      "painting": "z23",
+      "name": "Z23",
+      "ship_group": 40123,
+      "skin_id": 401230,
+      "camp": 4
+    },
+    {
+      "painting": "z23_hx",
+      "name": "Z23（婚变）",
+      "derived": true,
+      "camp": 4
+    },
+    {
+      "painting": "lafeier_2",
+      "name": "爱与美的秘密珍藏",
+      "ship_group": 60508,
+      "skin_id": 605081,
+      "camp": 6
+    },
+    {
+      "painting": "leigensibao_2",
+      "name": "暗之龙，光之岸",
+      "ship_group": 40210,
+      "skin_id": 402101,
+      "camp": 4
+    },
+    {
+      "painting": "weixi_2",
+      "name": "黯调铅华",
+      "ship_group": 40601,
+      "skin_id": 406012,
+      "camp": 4
+    },
+    {
+      "painting": "lingbo_10",
+      "name": "黯然礼装",
+      "ship_group": 30105,
+      "skin_id": 331051,
+      "camp": 3
+    },
+    {
+      "painting": "chuyue_2",
+      "name": "八月恋夏",
+      "ship_group": 30189,
+      "skin_id": 301891,
+      "camp": 3
+    },
+    {
+      "painting": "xinnong_4",
+      "name": "白沙幽梦",
+      "ship_group": 30708,
+      "skin_id": 307083,
+      "camp": 3
+    },
+    {
+      "painting": "lafei_4",
+      "name": "白兔迎春",
+      "ship_group": 10117,
+      "skin_id": 101173,
+      "camp": 1
+    },
+    {
+      "painting": "junhe_5",
+      "name": "百花庆云",
+      "ship_group": 30514,
+      "skin_id": 305141,
+      "camp": 3
+    },
+    {
+      "painting": "geliqiya_2",
+      "name": "办公室的“隔阂”",
+      "ship_group": 60306,
+      "skin_id": 603061,
+      "camp": 6
+    },
+    {
+      "painting": "jianye_3",
+      "name": "绊倒的迷糊女仆",
+      "ship_group": 31901,
+      "skin_id": 319012,
+      "camp": 3
+    },
+    {
+      "painting": "yuanchou_3",
+      "name": "杯盏盈芳华",
+      "ship_group": 20707,
+      "skin_id": 207072,
+      "camp": 2
+    },
+    {
+      "painting": "adaerbote_2",
+      "name": "闭店后的特别时光",
+      "ship_group": 40310,
+      "skin_id": 403101,
+      "camp": 4
+    },
+    {
+      "painting": "tiancheng_cv_3",
+      "name": "碧波绮尾",
+      "ship_group": 30715,
+      "skin_id": 307152,
+      "camp": 3
+    },
+    {
+      "painting": "biaoqiang",
+      "name": "标枪",
+      "ship_group": 20121,
+      "skin_id": 201210,
+      "camp": 2
+    },
+    {
+      "painting": "chaijun_4",
+      "name": "冰雪公主",
+      "ship_group": 29903,
+      "skin_id": 299033,
+      "camp": 2
+    },
+    {
+      "painting": "chaijun_4_hx",
+      "name": "冰雪公主（婚变）",
+      "derived": true,
+      "camp": 2
+    },
+    {
+      "painting": "tierbici_2",
+      "name": "冰雪消融的夏日",
+      "ship_group": 40502,
+      "skin_id": 405021,
+      "camp": 4
+    },
+    {
+      "painting": "rangbaer_4",
+      "name": "舶刀Première neige",
+      "ship_group": 90501,
+      "skin_id": 905013,
+      "camp": 9
+    },
+    {
+      "painting": "dulianglai_2",
+      "name": "不会消失的换装魔法",
+      "ship_group": 30225,
+      "skin_id": 302251,
+      "camp": 3
+    },
+    {
+      "painting": "daofeng_5",
+      "name": "不思议国度的白兔",
+      "ship_group": 30129,
+      "skin_id": 301292,
+      "camp": 3
+    },
+    {
+      "painting": "daofeng_5_hx",
+      "name": "不思议国度的白兔（婚变）",
+      "derived": true,
+      "camp": 3
+    },
+    {
+      "painting": "sebao_2",
+      "name": "布偶熊里面的是……？",
+      "ship_group": 81801,
+      "skin_id": 818011,
+      "camp": 8
+    },
+    {
+      "painting": "beierfasite_2",
+      "name": "彩云之玫瑰",
+      "ship_group": 20212,
+      "skin_id": 202121,
+      "camp": 2
+    },
+    {
+      "painting": "luoen_4",
+      "name": "苍翠的安眠曲",
+      "ship_group": 49901,
+      "skin_id": 499012,
+      "camp": 4
+    },
+    {
+      "painting": "buleisite_2",
+      "name": "苍海织歌",
+      "ship_group": 89903,
+      "skin_id": 899031,
+      "camp": 8
+    },
+    {
+      "painting": "chaijun_6",
+      "name": "柴郡猫的童话书迷宫",
+      "ship_group": 29903,
+      "skin_id": 299035,
+      "camp": 2
+    },
+    {
+      "painting": "suweiaitongmeng_3",
+      "name": "缠丝审讯",
+      "ship_group": 70502,
+      "skin_id": 705022,
+      "camp": 7
+    },
+    {
+      "painting": "lisailiu_3",
+      "name": "常緑Rêve prophétique",
+      "ship_group": 80501,
+      "skin_id": 805012,
+      "camp": 8
+    },
+    {
+      "painting": "chicheng_5",
+      "name": "朝凰来仪",
+      "ship_group": 30701,
+      "skin_id": 307014,
+      "camp": 3
+    },
+    {
+      "painting": "lisailiu_2",
+      "name": "潮风的Fleuron",
+      "ship_group": 80501,
+      "skin_id": 805011,
+      "camp": 8
+    },
+    {
+      "painting": "ougen_6",
+      "name": "沉醉于夜",
+      "ship_group": 40303,
+      "skin_id": 403035,
+      "camp": 4
+    },
+    {
+      "painting": "ougen_6_hx",
+      "name": "沉醉于夜（婚变）",
+      "derived": true,
+      "camp": 4
+    },
+    {
+      "painting": "gezi_2",
+      "name": "赤红之月的幻想",
+      "ship_group": 40507,
+      "skin_id": 405071,
+      "camp": 4
+    },
+    {
+      "painting": "dujiaoshou_4",
+      "name": "憧憬的约会日",
+      "ship_group": 20603,
+      "skin_id": 206033,
+      "camp": 2
+    },
+    {
+      "painting": "jialisuoniye_4",
+      "name": "春晓醉梦",
+      "ship_group": 90201,
+      "skin_id": 902012,
+      "camp": 9
+    },
+    {
+      "painting": "shengluyisi_2",
+      "name": "春之华",
+      "ship_group": 10213,
+      "skin_id": 102131,
+      "camp": 1
+    },
+    {
+      "painting": "shengluyisi_2_hx",
+      "name": "春之华（婚变）",
+      "derived": true,
+      "camp": 1
+    },
+    {
+      "painting": "hemin_2",
+      "name": "纯白的悠闲假日",
+      "ship_group": 20227,
+      "skin_id": 202272,
+      "camp": 2
+    },
+    {
+      "painting": "pulimaosi_3",
+      "name": "纯白天使的全身检查",
+      "ship_group": 29905,
+      "skin_id": 299052,
+      "camp": 2
+    },
+    {
+      "painting": "rangbaer_5",
+      "name": "灯映星展",
+      "ship_group": 90501,
+      "skin_id": 905014,
+      "camp": 9
+    },
+    {
+      "painting": "ninghai_4",
+      "name": "东煌姐妹！·N",
+      "ship_group": 50202,
+      "skin_id": 502023,
+      "camp": 5
+    },
+    {
+      "painting": "pinghai_4",
+      "name": "东煌姐妹！·P",
+      "ship_group": 50203,
+      "skin_id": 502033,
+      "camp": 5
+    },
+    {
+      "painting": "xuefeng_3",
+      "name": "冬之雪风",
+      "ship_group": 30116,
+      "skin_id": 301162,
+      "camp": 3
+    },
+    {
+      "painting": "dafeng_2",
+      "name": "毒苹果",
+      "ship_group": 30707,
+      "skin_id": 307071,
+      "camp": 3
+    },
+    {
+      "painting": "dafeng_2_hx",
+      "name": "毒苹果（婚变）",
+      "derived": true,
+      "camp": 3
+    },
+    {
+      "painting": "guanghui_7",
+      "name": "二人的学习时间",
+      "ship_group": 20703,
+      "skin_id": 207037,
+      "camp": 2
+    },
+    {
+      "painting": "dafeng_3",
+      "name": "放学后的甜蜜时光",
+      "ship_group": 30707,
+      "skin_id": 307074,
+      "camp": 3
+    },
+    {
+      "painting": "dafeng_4",
+      "name": "凤鸣春晓",
+      "ship_group": 30707,
+      "skin_id": 307072,
+      "camp": 3
+    },
+    {
+      "painting": "longfeng_2",
+      "name": "凤舞新年",
+      "ship_group": 30607,
+      "skin_id": 306071,
+      "camp": 3
+    },
+    {
+      "painting": "longfeng_2_hx",
+      "name": "凤舞新年（婚变）",
+      "derived": true,
+      "camp": 3
+    },
+    {
+      "painting": "aijier_2",
+      "name": "港区的龙女仆",
+      "ship_group": 49905,
+      "skin_id": 499051,
+      "camp": 4
+    },
+    {
+      "painting": "bulaimodun_4",
+      "name": "功夫少女！",
+      "ship_group": 10324,
+      "skin_id": 103242,
+      "camp": 1
+    },
+    {
+      "painting": "bulaimodun_4_hx",
+      "name": "功夫少女！（婚变）",
+      "derived": true,
+      "camp": 1
+    },
+    {
+      "painting": "mojiaduoer_4",
+      "name": "共坠的渴慕",
+      "ship_group": 90107,
+      "skin_id": 901073,
+      "camp": 9
+    },
+    {
+      "painting": "xukufu_2",
+      "name": "购物时光！",
+      "ship_group": 80801,
+      "skin_id": 808011,
+      "camp": 8
+    },
+    {
+      "painting": "jinluhao_2",
+      "name": "古堡中的恐怖淑女",
+      "ship_group": 960003,
+      "skin_id": 9600031,
+      "camp": 96
+    },
+    {
+      "painting": "dafeng_6",
+      "name": "海滨的白日美梦",
+      "ship_group": 30707,
+      "skin_id": 307075,
+      "camp": 3
+    },
+    {
+      "painting": "telafaerjia_2",
+      "name": "海风与夜语",
+      "ship_group": 20138,
+      "skin_id": 201381,
+      "camp": 2
+    },
+    {
+      "painting": "junzhu_5",
+      "name": "海滩享受计划",
+      "ship_group": 29902,
+      "skin_id": 299024,
+      "camp": 2
+    },
+    {
+      "painting": "ankeleiqi_2",
+      "name": "海豚、海洋、游泳课",
+      "ship_group": 19903,
+      "skin_id": 199031,
+      "camp": 1
+    },
+    {
+      "painting": "ankeleiqi_2_hx",
+      "name": "海豚、海洋、游泳课（婚变）",
+      "derived": true,
+      "camp": 1
+    },
+    {
+      "painting": "aimudeng_2",
+      "name": "黑白的夜之主",
+      "ship_group": 40207,
+      "skin_id": 402071,
+      "camp": 4
+    },
+    {
+      "painting": "aimudeng_2_hx",
+      "name": "黑白的夜之主（婚变）",
+      "derived": true,
+      "camp": 4
+    },
+    {
+      "painting": "jialisuoniye_3",
+      "name": "黑猫与南瓜之夜",
+      "ship_group": 90201,
+      "skin_id": 902013,
+      "camp": 9
+    },
+    {
+      "painting": "jialisuoniye_3_hx",
+      "name": "黑猫与南瓜之夜（婚变）",
+      "derived": true,
+      "camp": 9
+    },
+    {
+      "painting": "xinnong_3",
+      "name": "轰鸣的银轮",
+      "ship_group": 30708,
+      "skin_id": 307082,
+      "camp": 3
+    },
+    {
+      "painting": "xinnong_3_hx",
+      "name": "轰鸣的银轮（婚变）",
+      "derived": true,
+      "camp": 3
+    },
+    {
+      "painting": "feiteliedadi_4",
+      "name": "红封之礼",
+      "ship_group": 49902,
+      "skin_id": 499023,
+      "camp": 4
+    },
+    {
+      "painting": "tiancheng_3",
+      "name": "红鸢的闲暇片刻",
+      "ship_group": 30405,
+      "skin_id": 304052,
+      "camp": 3
+    },
+    {
+      "painting": "dewenjun_2",
+      "name": "红月下的恶魔",
+      "ship_group": 20313,
+      "skin_id": 203131,
+      "camp": 2
+    },
+    {
+      "painting": "jianye_4",
+      "name": "花绽之乐章",
+      "ship_group": 31901,
+      "skin_id": 319013,
+      "camp": 3
+    },
+    {
+      "painting": "luyijiushi_2",
+      "name": "华服的圣骑士",
+      "ship_group": 89901,
+      "skin_id": 899011,
+      "camp": 8
+    },
+    {
+      "painting": "abeikelongbi_3",
+      "name": "坏坏兔的恶作剧！",
+      "ship_group": 21304,
+      "skin_id": 213042,
+      "camp": 2
+    },
+    {
+      "painting": "abeikelongbi_3_hx",
+      "name": "坏坏兔的恶作剧！（婚变）",
+      "derived": true,
+      "camp": 2
+    },
+    {
+      "painting": "xinnong_5",
+      "name": "幻梦奇术",
+      "ship_group": 30708,
+      "skin_id": 307084,
+      "camp": 3
+    },
+    {
+      "painting": "jiluofu_3",
+      "name": "疾速截击",
+      "ship_group": 70204,
+      "skin_id": 702042,
+      "camp": 7
+    },
+    {
+      "painting": "kewei_6",
+      "name": "纪念印记",
+      "ship_group": 20705,
+      "skin_id": 207055,
+      "camp": 2
+    },
+    {
+      "painting": "nengdai_2",
+      "name": "祭典的秘境?",
+      "ship_group": 30221,
+      "skin_id": 302211,
+      "camp": 3
+    },
+    {
+      "painting": "yuekechengii_3",
+      "name": "交错的温柔时光",
+      "ship_group": 10710,
+      "skin_id": 107102,
+      "camp": 1
+    },
+    {
+      "painting": "shitelasai_2",
+      "name": "节庆的Chronos",
+      "ship_group": 40703,
+      "skin_id": 407031,
+      "camp": 4
+    },
+    {
+      "painting": "aijier_3",
+      "name": "金龙腾祥云",
+      "ship_group": 49905,
+      "skin_id": 499052,
+      "camp": 4
+    },
+    {
+      "painting": "aijier_3_hx",
+      "name": "金龙腾祥云（婚变）",
+      "derived": true,
+      "camp": 4
+    },
+    {
+      "painting": "kelaimengsuo_2",
+      "name": "金日煦风",
+      "ship_group": 90502,
+      "skin_id": 905021,
+      "camp": 9
+    },
+    {
+      "painting": "taiyuan_2",
+      "name": "金蛇闹春",
+      "ship_group": 50104,
+      "skin_id": 501041,
+      "camp": 5
+    },
+    {
+      "painting": "wuzang_3",
+      "name": "堇色兔的狙击游戏",
+      "ship_group": 30510,
+      "skin_id": 305102,
+      "camp": 3
+    },
+    {
+      "painting": "beianpudunii_2",
+      "name": "竞泳之星",
+      "ship_group": 10326,
+      "skin_id": 103261,
+      "camp": 1
+    },
+    {
+      "painting": "mojiaduoer_2",
+      "name": "静谧一隅的燥热",
+      "ship_group": 90107,
+      "skin_id": 901071,
+      "camp": 9
+    },
+    {
+      "painting": "meiyinci_3",
+      "name": "静雅之所的安逸",
+      "ship_group": 49903,
+      "skin_id": 499033,
+      "camp": 4
+    },
+    {
+      "painting": "naximofu_2",
+      "name": "聚光灯下的初体验",
+      "ship_group": 79902,
+      "skin_id": 799021,
+      "camp": 7
+    },
+    {
+      "painting": "lafei",
+      "name": "拉菲",
+      "ship_group": 10117,
+      "skin_id": 101170,
+      "camp": 1
+    },
+    {
+      "painting": "weineituo_2",
+      "name": "拉斯佩齐亚之花",
+      "ship_group": 60501,
+      "skin_id": 605011,
+      "camp": 6
+    },
+    {
+      "painting": "aimierbeierding_2",
+      "name": "蓝色海岸",
+      "ship_group": 80201,
+      "skin_id": 802011,
+      "camp": 8
+    },
+    {
+      "painting": "edu_4",
+      "name": "懒懒的白兔",
+      "ship_group": 90111,
+      "skin_id": 901113,
+      "camp": 9
+    },
+    {
+      "painting": "buleisite_3",
+      "name": "良夜春景",
+      "ship_group": 89903,
+      "skin_id": 899032,
+      "camp": 8
+    },
+    {
+      "painting": "guangrong_3",
+      "name": "凉夜香雪",
+      "ship_group": 20706,
+      "skin_id": 207062,
+      "camp": 2
+    },
+    {
+      "painting": "huonululu_5",
+      "name": "两人的夏日祭",
+      "ship_group": 10212,
+      "skin_id": 102124,
+      "camp": 1
+    },
+    {
+      "painting": "baifeng_2",
+      "name": "缭乱之花的忍者游戏",
+      "ship_group": 30716,
+      "skin_id": 307161,
+      "camp": 3
+    },
+    {
+      "painting": "kubo_2",
+      "name": "烈日的网球场",
+      "ship_group": 10144,
+      "skin_id": 101441,
+      "camp": 1
+    },
+    {
+      "painting": "lingbo",
+      "name": "绫波",
+      "ship_group": 30105,
+      "skin_id": 301050,
+      "camp": 3
+    },
+    {
+      "painting": "tiancheng_cv_2",
+      "name": "落于王座之花",
+      "ship_group": 30715,
+      "skin_id": 307151,
+      "camp": 3
+    },
+    {
+      "painting": "guandao_2",
+      "name": "魅力舞台",
+      "ship_group": 11802,
+      "skin_id": 118021,
+      "camp": 1
+    },
+    {
+      "painting": "jinshi_2",
+      "name": "朦胧的宠溺时刻",
+      "ship_group": 119901,
+      "skin_id": 1199011,
+      "camp": 11
+    },
+    {
+      "painting": "genaisennao_2",
+      "name": "梦魇魅影",
+      "ship_group": 40402,
+      "skin_id": 404021,
+      "camp": 4
+    },
+    {
+      "painting": "beikaluolaina_2",
+      "name": "秘密的换装练习？",
+      "ship_group": 10512,
+      "skin_id": 105121,
+      "camp": 1
+    },
+    {
+      "painting": "beikaluolaina_2_hx",
+      "name": "秘密的换装练习？（婚变）",
+      "derived": true,
+      "camp": 1
+    },
+    {
+      "painting": "rangbaer_3",
+      "name": "秘密的Après midi",
+      "ship_group": 90501,
+      "skin_id": 905012,
+      "camp": 9
+    },
+    {
+      "painting": "edu_3",
+      "name": "秘密基地的Mercredi",
+      "ship_group": 90111,
+      "skin_id": 901112,
+      "camp": 9
+    },
+    {
+      "painting": "edu_3_hx",
+      "name": "秘密基地的Mercredi（婚变）",
+      "derived": true,
+      "camp": 9
+    },
+    {
+      "painting": "aierdeliqi_5",
+      "name": "喵喵偶像团？",
+      "ship_group": 10126,
+      "skin_id": 101264,
+      "camp": 1
+    },
+    {
+      "painting": "mingshi",
+      "name": "明石",
+      "ship_group": 31201,
+      "skin_id": 312010,
+      "camp": 3
+    },
+    {
+      "painting": "zhenzhuhao_2",
+      "name": "魔堡中的堕天使",
+      "ship_group": 960014,
+      "skin_id": 9600141,
+      "camp": 96
+    },
+    {
+      "painting": "guandao_3",
+      "name": "女忍者的危险综艺秀",
+      "ship_group": 11802,
+      "skin_id": 118022,
+      "camp": 1
+    },
+    {
+      "painting": "xinzexi_5",
+      "name": "漆黑的超极速前奏",
+      "ship_group": 10517,
+      "skin_id": 105174,
+      "camp": 1
+    },
+    {
+      "painting": "kelifulan_3",
+      "name": "骑士之夜",
+      "ship_group": 10209,
+      "skin_id": 102092,
+      "camp": 1
+    },
+    {
+      "painting": "dafeng_7",
+      "name": "绮愿良宵",
+      "ship_group": 30707,
+      "skin_id": 307076,
+      "camp": 3
+    },
+    {
+      "painting": "liekexingdunii_2",
+      "name": "轻飘飘的拂拭时光",
+      "ship_group": 10716,
+      "skin_id": 107161,
+      "camp": 1
+    },
+    {
+      "painting": "yibei_3",
+      "name": "清纯的“反派小姐”？",
+      "ship_group": 40602,
+      "skin_id": 406022,
+      "camp": 4
+    },
+    {
+      "painting": "banerwei_3",
+      "name": "清凉的甜蜜滋味",
+      "ship_group": 80702,
+      "skin_id": 807022,
+      "camp": 8
+    },
+    {
+      "painting": "baifeng_3",
+      "name": "晴雨狐嫁",
+      "ship_group": 30716,
+      "skin_id": 307162,
+      "camp": 3
+    },
+    {
+      "painting": "weiyan_2",
+      "name": "囚牢里的危险兔",
+      "ship_group": 70102,
+      "skin_id": 701021,
+      "camp": 7
+    },
+    {
+      "painting": "benningdun_2",
+      "name": "全速！盛夏逐光企划",
+      "ship_group": 10720,
+      "skin_id": 107201,
+      "camp": 1
+    },
+    {
+      "painting": "fengyun_4",
+      "name": "热茶与女仆修行",
+      "ship_group": 30186,
+      "skin_id": 301863,
+      "camp": 3
+    },
+    {
+      "painting": "maliluosi_3_doa",
+      "name": "热气蒸腾的女神",
+      "ship_group": 1060001,
+      "skin_id": 10600012,
+      "camp": 106
+    },
+    {
+      "painting": "sitelasibao_2",
+      "name": "赛场上的电子妖精",
+      "ship_group": 90402,
+      "skin_id": 904021,
+      "camp": 9
+    },
+    {
+      "painting": "sitelasibao_2_hx",
+      "name": "赛场上的电子妖精（婚变）",
+      "derived": true,
+      "camp": 9
+    },
+    {
+      "painting": "xianghe_2",
+      "name": "散花舞鹤",
+      "ship_group": 30705,
+      "skin_id": 307051,
+      "camp": 3
+    },
+    {
+      "painting": "banrenma_2",
+      "name": "沙滨的水之精灵",
+      "ship_group": 20604,
+      "skin_id": 206041,
+      "camp": 2
+    },
+    {
+      "painting": "shi_2",
+      "name": "沙滩的慵懒主宰",
+      "ship_group": 20516,
+      "skin_id": 205161,
+      "camp": 2
+    },
+    {
+      "painting": "qibolin_2",
+      "name": "沙滩上的乌尔德",
+      "ship_group": 40701,
+      "skin_id": 407011,
+      "camp": 4
+    },
+    {
+      "painting": "biaoqiang_3",
+      "name": "沙滩野餐会",
+      "ship_group": 20121,
+      "skin_id": 201212,
+      "camp": 2
+    },
+    {
+      "painting": "z46_3",
+      "name": "少女的借物竞赛",
+      "ship_group": 40146,
+      "skin_id": 401462,
+      "camp": 4
+    },
+    {
+      "painting": "xingdengbao_3",
+      "name": "深阁舞戏",
+      "ship_group": 49909,
+      "skin_id": 499092,
+      "camp": 4
+    },
+    {
+      "painting": "aersasi_3",
+      "name": "圣宵之鬼的微醺",
+      "ship_group": 80503,
+      "skin_id": 805032,
+      "camp": 8
+    },
+    {
+      "painting": "huonululu_3",
+      "name": "盛夏的「灾难」",
+      "ship_group": 10212,
+      "skin_id": 102122,
+      "camp": 1
+    },
+    {
+      "painting": "aersasi_2",
+      "name": "盛夏的圣迹",
+      "ship_group": 80503,
+      "skin_id": 805031,
+      "camp": 8
+    },
+    {
+      "painting": "xinzexi_3",
+      "name": "盛夏的闲暇",
+      "ship_group": 10517,
+      "skin_id": 105172,
+      "camp": 1
+    },
+    {
+      "painting": "tianlangxing_3",
+      "name": "盛夏的Seirios ",
+      "ship_group": 20220,
+      "skin_id": 202202,
+      "camp": 2
+    },
+    {
+      "painting": "aidang_2",
+      "name": "盛夏进行曲",
+      "ship_group": 30312,
+      "skin_id": 303121,
+      "camp": 3
+    },
+    {
+      "painting": "ailunsamuna_3",
+      "name": "双面侠盗",
+      "ship_group": 10145,
+      "skin_id": 101452,
+      "camp": 1
+    },
+    {
+      "painting": "bola_2",
+      "name": "水边的事故？",
+      "ship_group": 60303,
+      "skin_id": 603031,
+      "camp": 6
+    },
+    {
+      "painting": "u2501_2",
+      "name": "水幕后的珍宝",
+      "ship_group": 40815,
+      "skin_id": 408151,
+      "camp": 4
+    },
+    {
+      "painting": "beilaosenlin_2",
+      "name": "水色疗愈",
+      "ship_group": 80601,
+      "skin_id": 806011,
+      "camp": 8
+    },
+    {
+      "painting": "lafeiii_3",
+      "name": "睡意满满忙碌DAY",
+      "ship_group": 10151,
+      "skin_id": 101511,
+      "camp": 1
+    },
+    {
+      "painting": "bailong_3",
+      "name": "丝竹喧阗",
+      "ship_group": 39905,
+      "skin_id": 399052,
+      "camp": 3
+    },
+    {
+      "painting": "aijier_4",
+      "name": "私密闲暇时",
+      "ship_group": 49905,
+      "skin_id": 499053,
+      "camp": 4
+    },
+    {
+      "painting": "yingrui_3",
+      "name": "松戏梅·其上",
+      "ship_group": 50204,
+      "skin_id": 502042,
+      "camp": 5
+    },
+    {
+      "painting": "zhaohe_3",
+      "name": "松戏梅·其下",
+      "ship_group": 50205,
+      "skin_id": 502052,
+      "camp": 5
+    },
+    {
+      "painting": "jinjiang_2",
+      "name": "逃脱失败……？",
+      "ship_group": 30516,
+      "skin_id": 305161,
+      "camp": 3
+    },
+    {
+      "painting": "baiyanjuren_4",
+      "name": "特训中的威严之人",
+      "ship_group": 20602,
+      "skin_id": 206023,
+      "camp": 2
+    },
+    {
+      "painting": "lupuleixite_2",
+      "name": "腾龙戏春？",
+      "ship_group": 49907,
+      "skin_id": 499071,
+      "camp": 4
+    },
+    {
+      "painting": "longwu_2",
+      "name": "腾龙新春宴",
+      "ship_group": 50105,
+      "skin_id": 501051,
+      "camp": 5
+    },
+    {
+      "painting": "qiye_9",
+      "name": "天际的潜水者",
+      "ship_group": 10706,
+      "skin_id": 137060,
+      "camp": 1
+    },
+    {
+      "painting": "suweiaitongmeng_2",
+      "name": "天幕危机",
+      "ship_group": 70502,
+      "skin_id": 705021,
+      "camp": 7
+    },
+    {
+      "painting": "dujiaoshou_6",
+      "name": "天使的My Night",
+      "ship_group": 20603,
+      "skin_id": 206035,
+      "camp": 2
+    },
+    {
+      "painting": "pinghai_6",
+      "name": "甜蜜嫣红",
+      "ship_group": 50203,
+      "skin_id": 502035,
+      "camp": 5
+    },
+    {
+      "painting": "sipeibojue_5",
+      "name": "铁血♥最可爱",
+      "ship_group": 40305,
+      "skin_id": 403054,
+      "camp": 4
+    },
+    {
+      "painting": "bisimai_2",
+      "name": "铁血的辉光",
+      "ship_group": 40501,
+      "skin_id": 405011,
+      "camp": 4
+    },
+    {
+      "painting": "bisimai_2_hx",
+      "name": "铁血的辉光（婚变）",
+      "derived": true,
+      "camp": 4
+    },
+    {
+      "painting": "kalangshitade_2",
+      "name": "突击行动开始！",
+      "ship_group": 71801,
+      "skin_id": 718011,
+      "camp": 7
+    },
+    {
+      "painting": "weiyan_4",
+      "name": "突袭！暗黑基地！",
+      "ship_group": 70102,
+      "skin_id": 701023,
+      "camp": 7
+    },
+    {
+      "painting": "weiyan_4_hx",
+      "name": "突袭！暗黑基地！（婚变）",
+      "derived": true,
+      "camp": 7
+    },
+    {
+      "painting": "jiuyun_2",
+      "name": "团子的诱惑",
+      "ship_group": 30223,
+      "skin_id": 302231,
+      "camp": 3
+    },
+    {
+      "painting": "huangjiafangzhou_3",
+      "name": "晚会的守护者",
+      "ship_group": 20702,
+      "skin_id": 207022,
+      "camp": 2
+    },
+    {
+      "painting": "yunxian_3",
+      "name": "万船集怀",
+      "ship_group": 30319,
+      "skin_id": 303192,
+      "camp": 3
+    },
+    {
+      "painting": "yanusi_3",
+      "name": "万圣喵喵惊悚夜",
+      "ship_group": 20135,
+      "skin_id": 201351,
+      "camp": 2
+    },
+    {
+      "painting": "jinluhao_3",
+      "name": "微笑的白色魅影",
+      "ship_group": 960003,
+      "skin_id": 9600032,
+      "camp": 96
+    },
+    {
+      "painting": "luyijiushi_4",
+      "name": "微醺的静谧时光",
+      "ship_group": 89901,
+      "skin_id": 899013,
+      "camp": 8
+    },
+    {
+      "painting": "xingdengbao_2",
+      "name": "微醺胜负",
+      "ship_group": 49909,
+      "skin_id": 499091,
+      "camp": 4
+    },
+    {
+      "painting": "ougen_8",
+      "name": "微醺与试探的距离",
+      "ship_group": 40303,
+      "skin_id": 403037,
+      "camp": 4
+    },
+    {
+      "painting": "bisimai_4",
+      "name": "未完成的圣诞惊喜",
+      "ship_group": 40501,
+      "skin_id": 405013,
+      "camp": 4
+    },
+    {
+      "painting": "z46_4",
+      "name": "未知的闪亮舞台",
+      "ship_group": 40146,
+      "skin_id": 401463,
+      "camp": 4
+    },
+    {
+      "painting": "jianye_2",
+      "name": "温泉放松时间",
+      "ship_group": 31901,
+      "skin_id": 319011,
+      "camp": 3
+    },
+    {
+      "painting": "jianye_2_hx",
+      "name": "温泉放松时间（婚变）",
+      "derived": true,
+      "camp": 3
+    },
+    {
+      "painting": "hemin_3",
+      "name": "温柔的纯白天使",
+      "ship_group": 20227,
+      "skin_id": 202271,
+      "camp": 2
+    },
+    {
+      "painting": "luoma_2",
+      "name": "午夜的白天鹅",
+      "ship_group": 60503,
+      "skin_id": 605031,
+      "camp": 6
+    },
+    {
+      "painting": "antu_2",
+      "name": "午夜的瑰色电梯",
+      "ship_group": 30409,
+      "skin_id": 304091,
+      "camp": 3
+    },
+    {
+      "painting": "feiteliekaer_4",
+      "name": "午夜频道",
+      "ship_group": 40314,
+      "skin_id": 403143,
+      "camp": 4
+    },
+    {
+      "painting": "gaoxiong_7",
+      "name": "武者的“内在”修养",
+      "ship_group": 30311,
+      "skin_id": 303117,
+      "camp": 3
+    },
+    {
+      "painting": "kuersike_2",
+      "name": "雾中雪狼",
+      "ship_group": 70302,
+      "skin_id": 703021,
+      "camp": 7
+    },
+    {
+      "painting": "yunxian_2",
+      "name": "嬉水碧海",
+      "ship_group": 30319,
+      "skin_id": 303191,
+      "camp": 3
+    },
+    {
+      "painting": "wuqi_2",
+      "name": "细语春霞",
+      "ship_group": 39904,
+      "skin_id": 399041,
+      "camp": 3
+    },
+    {
+      "painting": "feiteliekaer_3",
+      "name": "夏日防晒计划",
+      "ship_group": 40314,
+      "skin_id": 403142,
+      "camp": 4
+    },
+    {
+      "painting": "z46_2",
+      "name": "夏之初体验",
+      "ship_group": 40146,
+      "skin_id": 401461,
+      "camp": 4
+    },
+    {
+      "painting": "feiteliedadi_3",
+      "name": "相会于盛夏之夜",
+      "ship_group": 49902,
+      "skin_id": 499022,
+      "camp": 4
+    },
+    {
+      "painting": "xinnong_6",
+      "name": "相融一梦",
+      "ship_group": 30708,
+      "skin_id": 307085,
+      "camp": 3
+    },
+    {
+      "painting": "qisheng_2",
+      "name": "相依偎的温度",
+      "ship_group": 110201,
+      "skin_id": 1102011,
+      "camp": 11
+    },
+    {
+      "painting": "aerbien_3",
+      "name": "香气来朱阁",
+      "ship_group": 20607,
+      "skin_id": 206072,
+      "camp": 2
+    },
+    {
+      "painting": "ankeleiqi_4",
+      "name": "香甜牛奶味之夜",
+      "ship_group": 19903,
+      "skin_id": 199033,
+      "camp": 1
+    },
+    {
+      "painting": "zengkehaijunshangjiang_2",
+      "name": "心动审讯练习中 ",
+      "ship_group": 40407,
+      "skin_id": 404071,
+      "camp": 4
+    },
+    {
+      "painting": "kebensi_2",
+      "name": "心动营养灌输中",
+      "ship_group": 10725,
+      "skin_id": 107251,
+      "camp": 1
+    },
+    {
+      "painting": "wuqi_3",
+      "name": "心向何方的指导课",
+      "ship_group": 39904,
+      "skin_id": 399042,
+      "camp": 3
+    },
+    {
+      "painting": "wuqi_3_hx",
+      "name": "心向何方的指导课（婚变）",
+      "derived": true,
+      "camp": 3
+    },
+    {
+      "painting": "kelifulan_8",
+      "name": "休息室的意外邂逅？",
+      "ship_group": 10209,
+      "skin_id": 102097,
+      "camp": 1
+    },
+    {
+      "painting": "boyixi_2",
+      "name": "羞怯的蓝宝石",
+      "ship_group": 10229,
+      "skin_id": 102291,
+      "camp": 1
+    },
+    {
+      "painting": "mojiaduoer_3",
+      "name": "嗅诊的护理天使",
+      "ship_group": 90107,
+      "skin_id": 901072,
+      "camp": 9
+    },
+    {
+      "painting": "chaijun_5",
+      "name": "绚烂夜梦",
+      "ship_group": 29903,
+      "skin_id": 299034,
+      "camp": 2
+    },
+    {
+      "painting": "xuefeng",
+      "name": "雪风",
+      "ship_group": 30116,
+      "skin_id": 301160,
+      "camp": 3
+    },
+    {
+      "painting": "shengluyisi_3",
+      "name": "雪下之饮",
+      "ship_group": 10213,
+      "skin_id": 102132,
+      "camp": 1
+    },
+    {
+      "painting": "baerdimo_6",
+      "name": "迅疾的蓝星",
+      "ship_group": 10316,
+      "skin_id": 103165,
+      "camp": 1
+    },
+    {
+      "painting": "deyizhi_3",
+      "name": "艳阳下的“福利”时间",
+      "ship_group": 40304,
+      "skin_id": 403042,
+      "camp": 4
+    },
+    {
+      "painting": "nengdai_3",
+      "name": "阳光·沙滩·假日",
+      "ship_group": 30221,
+      "skin_id": 302216,
+      "camp": 3
+    },
+    {
+      "painting": "qianwei_2",
+      "name": "摇摆不定的伪装",
+      "ship_group": 20513,
+      "skin_id": 205131,
+      "camp": 2
+    },
+    {
+      "painting": "hailunna_4",
+      "name": "耀眼的波纹",
+      "ship_group": 10205,
+      "skin_id": 102053,
+      "camp": 1
+    },
+    {
+      "painting": "weiyan_6",
+      "name": "野兔和蒸汽房",
+      "ship_group": 70102,
+      "skin_id": 701025,
+      "camp": 7
+    },
+    {
+      "painting": "baerdimo_5",
+      "name": "夜风Minuet",
+      "ship_group": 10316,
+      "skin_id": 103163,
+      "camp": 1
+    },
+    {
+      "painting": "xixuegui_4",
+      "name": "夜姬的正装?",
+      "ship_group": 20123,
+      "skin_id": 201233,
+      "camp": 2
+    },
+    {
+      "painting": "shi_3",
+      "name": "夜巷中的诱引者",
+      "ship_group": 20516,
+      "skin_id": 205162,
+      "camp": 2
+    },
+    {
+      "painting": "wuerlixi_3",
+      "name": "一骑绝尘",
+      "ship_group": 40503,
+      "skin_id": 405032,
+      "camp": 4
+    },
+    {
+      "painting": "zhangwu_2",
+      "name": "一枝春欲放",
+      "ship_group": 50302,
+      "skin_id": 503021,
+      "camp": 5
+    },
+    {
+      "painting": "jian_3",
+      "name": "异域绮梦",
+      "ship_group": 50209,
+      "skin_id": 502092,
+      "camp": 5
+    },
+    {
+      "painting": "chaijun_3",
+      "name": "音乐绚烂CaitSith",
+      "ship_group": 29903,
+      "skin_id": 299032,
+      "camp": 2
+    },
+    {
+      "painting": "anninvwang_2",
+      "name": "隐秘之拥的呼唤",
+      "ship_group": 960012,
+      "skin_id": 9600121,
+      "camp": 96
+    },
+    {
+      "painting": "yingxianzuo_3",
+      "name": "慵懒的春光",
+      "ship_group": 20606,
+      "skin_id": 206062,
+      "camp": 2
+    },
+    {
+      "painting": "bunao_3",
+      "name": "慵懒的领航员小姐",
+      "ship_group": 20712,
+      "skin_id": 207122,
+      "camp": 2
+    },
+    {
+      "painting": "yichui_2",
+      "name": "永梦的青女",
+      "ship_group": 39901,
+      "skin_id": 399011,
+      "camp": 3
+    },
+    {
+      "painting": "lvzuofu_2",
+      "name": "永夜的赤之贵族",
+      "ship_group": 40404,
+      "skin_id": 404041,
+      "camp": 4
+    },
+    {
+      "painting": "zhala_2",
+      "name": "泳池边的“偶遇”",
+      "ship_group": 60302,
+      "skin_id": 603021,
+      "camp": 6
+    },
+    {
+      "painting": "haiyinlixi_2",
+      "name": "泳池边的救生兔(?)",
+      "ship_group": 40309,
+      "skin_id": 403092,
+      "camp": 4
+    },
+    {
+      "painting": "siwanshi_3",
+      "name": "优哉游哉的龙神大人",
+      "ship_group": 39906,
+      "skin_id": 399062,
+      "camp": 3
+    },
+    {
+      "painting": "guanghui_9",
+      "name": "幽影徘徊之夜",
+      "ship_group": 20703,
+      "skin_id": 237031,
+      "camp": 2
+    },
+    {
+      "painting": "bulaimodun_5",
+      "name": "悠然放松时光",
+      "ship_group": 10324,
+      "skin_id": 103244,
+      "camp": 1
+    },
+    {
+      "painting": "shengluyisi_5",
+      "name": "邮轮上的诱人午后",
+      "ship_group": 10213,
+      "skin_id": 102134,
+      "camp": 1
+    },
+    {
+      "painting": "ouruola_4",
+      "name": "渝城秘技",
+      "ship_group": 20215,
+      "skin_id": 202153,
+      "camp": 2
+    },
+    {
+      "painting": "aogusite_4",
+      "name": "与“魔女”的星夜之约",
+      "ship_group": 49906,
+      "skin_id": 499063,
+      "camp": 4
+    },
+    {
+      "painting": "qiye_10",
+      "name": "雨霁于心晴之时",
+      "ship_group": 10706,
+      "skin_id": 137061,
+      "camp": 1
+    },
+    {
+      "painting": "adaerbote_3",
+      "name": "浴室中的小小意外",
+      "ship_group": 40310,
+      "skin_id": 403102,
+      "camp": 4
+    },
+    {
+      "painting": "weizhang_3",
+      "name": "愿望为“爱”",
+      "ship_group": 30513,
+      "skin_id": 305132,
+      "camp": 3
+    },
+    {
+      "painting": "yanusi_7",
+      "name": "云端的水光",
+      "ship_group": 20135,
+      "skin_id": 201355,
+      "camp": 2
+    },
+    {
+      "painting": "z13_2",
+      "name": "战略性约会进行时 ",
+      "ship_group": 40113,
+      "skin_id": 401131,
+      "camp": 4
+    },
+    {
+      "painting": "qianjian_2",
+      "name": "绽放于至深之夜",
+      "ship_group": 30320,
+      "skin_id": 303201,
+      "camp": 3
+    },
+    {
+      "painting": "gangyishawa_3",
+      "name": "真我的显影",
+      "ship_group": 960007,
+      "skin_id": 9600072,
+      "camp": 96
+    },
+    {
+      "painting": "pizibao_2",
+      "name": "斟酒女郎的赌局",
+      "ship_group": 10328,
+      "skin_id": 103281,
+      "camp": 1
+    },
+    {
+      "painting": "aierdeliqi_4",
+      "name": "正月的牵手",
+      "ship_group": 10126,
+      "skin_id": 101263,
+      "camp": 1
+    },
+    {
+      "painting": "kewei_4",
+      "name": "值日时的春心萌动",
+      "ship_group": 20705,
+      "skin_id": 207053,
+      "camp": 2
+    },
+    {
+      "painting": "wuzang_4",
+      "name": "只为你献上的应援",
+      "ship_group": 30510,
+      "skin_id": 305103,
+      "camp": 3
+    },
+    {
+      "painting": "tianlangxing_5",
+      "name": "至高乐园的白兔",
+      "ship_group": 20220,
+      "skin_id": 202204,
+      "camp": 2
+    },
+    {
+      "painting": "kalvbudisi_2",
+      "name": "治愈的红闺",
+      "ship_group": 20230,
+      "skin_id": 202301,
+      "camp": 2
+    },
+    {
+      "painting": "ankeleiqi_3",
+      "name": "舟畔共明月",
+      "ship_group": 19903,
+      "skin_id": 199032,
+      "camp": 1
+    },
+    {
+      "painting": "xiafei_4",
+      "name": "祝福的起步冲刺",
+      "ship_group": 90701,
+      "skin_id": 907013,
+      "camp": 9
+    },
+    {
+      "painting": "jianwu_2",
+      "name": "妆点，只为今夜",
+      "ship_group": 50301,
+      "skin_id": 503011,
+      "camp": 5
+    },
+    {
+      "painting": "daofeng_4",
+      "name": "最速兔兔的邀请函(?)",
+      "ship_group": 30129,
+      "skin_id": 301291,
+      "camp": 3
+    },
+    {
+      "painting": "masaina_2",
+      "name": "醉甜之泉",
+      "ship_group": 80401,
+      "skin_id": 804011,
+      "camp": 8
+    },
+    {
+      "painting": "meikelunbao_2",
+      "name": "作茧自缚",
+      "ship_group": 49910,
+      "skin_id": 499101,
+      "camp": 4
+    }
+  ]
+}
