@@ -81,17 +81,13 @@ function readCamps(path) {
 }
 
 // 模板外 bundle 的派生显示名（大小写不敏感匹配后仍查不到的少数条目才走这里）：
-// 依次尝试原样、剥 _hx、再剥 _数字，命中任一模板条目即借它的名字加后缀；全不命中回退 painting 本名。
+// 先试原样、再剥 _数字，命中模板条目即借它的名字加（改造）后缀；全不命中回退 painting 本名。
 function deriveName(painting, byPainting) {
-    const candidates = [painting]
-    const noHx = painting.replace(/_hx$/, '')
-    if (noHx !== painting) candidates.push(noHx)
-    candidates.push(noHx.replace(/_\d+$/, ''))
+    const candidates = [painting, painting.replace(/_\d+$/, '')]
     for (const candidate of new Set(candidates)) {
         const template = byPainting.get(candidate.toLowerCase())
         if (template?.name) {
-            const suffix = painting.endsWith('_hx') ? '（婚变）' : '（改造）'
-            return { name: `${template.name}${suffix}`, base: template }
+            return { name: `${template.name}（改造）`, base: template }
         }
     }
     return { name: painting, base: null }
@@ -102,6 +98,7 @@ function deriveName(painting, byPainting) {
  * nameCodes 为 {namecode:N} 代换表；camps 为 ship_group -> 阵营(nationality) 表，查不到不落 camp 字段。
  * 查找键统一小写（bundle 名全小写而模板 painting 可能含大写，如 Z46_2 / lafeiII_3）。
  * 同 painting 被多条模板共享时取文件序第一条（与 extract.js 的 readTemplateByPainting 运行时行为一致）。
+ * `_hx` 后缀 bundle 是 CN 审核用的和谐变体（客户端 HXSet.isHx() 时改拉），不收录，目录只保留非和谐版本。
  */
 export function buildCatalog(templateText, bundleNames, gameVersion, nameCodes = new Map(), camps = new Map()) {
     const byPainting = new Map()
@@ -114,6 +111,7 @@ export function buildCatalog(templateText, bundleNames, gameVersion, nameCodes =
     const entries = []
     const usedNames = new Set()
     for (const painting of bundleNames) {
+        if (painting.endsWith('_hx')) continue
         let entry
         let shipGroup
         const template = byPainting.get(painting.toLowerCase())

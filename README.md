@@ -119,7 +119,7 @@ npm run dev       # dev server 实时扫描 models/ 生成皮肤清单，新增�
 
 ### 皮肤目录维护
 
-`public/catalog.json`（显示名 → bundle 名映射，纯名字元数据）由 `scripts/gen_catalog.js` 从游戏 Lua 快照与设备侧 live2d 索引生成。游戏版本更新后重新生成并提交：
+`public/catalog.json`（显示名 → bundle 名映射，纯名字元数据）由 `scripts/gen_catalog.js` 从游戏 Lua 快照与设备侧 live2d 索引生成。目录只收录非和谐版本：`_hx` 后缀的 CN 审核和谐变体 bundle 不拉取不收录。游戏版本更新后重新生成并提交：
 
 ```bash
 node scripts/pull_bundles.js --index   # 刷新 .tmp/hashes-live2d.csv 等索引

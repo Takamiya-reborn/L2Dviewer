@@ -47,9 +47,9 @@ const MODEL_ROOT = resolve(ROOT, 'models')
 
 const crc32Str = (s) => crc32(s)
 
-// 模型 id -> 角色目录名：fulici_2 -> fulici，shengluyisi_2_hx -> shengluyisi
+// 模型 id -> 角色目录名：fulici_2 -> fulici，shengluyisi_2 -> shengluyisi
 function charName(modelId) {
-    return modelId.replace(/_hx$/, '').replace(/_\d+$/, '')
+    return modelId.replace(/_\d+$/, '')
 }
 
 const warn = (msg) => console.log(`[warn] ${msg}`)

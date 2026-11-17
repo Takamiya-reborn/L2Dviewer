@@ -1,7 +1,7 @@
 // 碧蓝航线 L2D 资源 adb 拉取器：设备 files/AssetBundles/live2d -> .tmp/bundles/。
 //
 // 用法:
-//     node scripts/pull_bundles.js <skin_id>...   # 按皮肤 id 拉取（_hx 为改造/婚变体）
+//     node scripts/pull_bundles.js <skin_id>...   # 按皮肤 id 拉取
 //     ... --all                                   # 拉取全部 bundle（先预览总量，需确认）
 //     ... --list [关键词]                         # 只列出远端 bundle（可按关键词过滤）
 //     ... --index                                 # 只更新 .tmp/ 下的索引缓存
@@ -112,7 +112,7 @@ function remoteSize(lslLine) {
     return null
 }
 
-// 返回 [{name, size}]（size 可为 null）
+// 返回 [{name, size}]（size 可为 null）；`_hx` 后缀是 CN 审核和谐变体，默认不显示不拉取
 function listRemoteBundles(serial, pkg, keyword) {
     const remote = `/sdcard/Android/data/${pkg}/${REMOTE_FILES_DIR}`
     const out = adb(['shell', 'ls', '-l', remote], serial)
@@ -120,6 +120,7 @@ function listRemoteBundles(serial, pkg, keyword) {
     for (const line of out.replace(/\r/g, '').split('\n')) {
         const name = line.trim().split(/\s+/).pop() ?? ''
         if (!name || name.startsWith('total')) continue
+        if (name.endsWith('_hx')) continue
         if (keyword && !name.toLowerCase().includes(keyword.toLowerCase())) continue
         bundles.push({ name, size: remoteSize(line) })
     }

@@ -23,12 +23,6 @@
       "camp": 8
     },
     {
-      "painting": "aimierbeierding_3_hx",
-      "name": "「女仆」浪漫（婚变）",
-      "derived": true,
-      "camp": 8
-    },
-    {
       "painting": "qiershazhi_2",
       "name": "Allnight Charge",
       "ship_group": 19904,
@@ -43,22 +37,10 @@
       "camp": 1
     },
     {
-      "painting": "linuo_3_hx",
-      "name": "bunny·reno！（婚变）",
-      "derived": true,
-      "camp": 1
-    },
-    {
       "painting": "ailunsamuna_2",
       "name": "Charming Rabbit",
       "ship_group": 10145,
       "skin_id": 101451,
-      "camp": 1
-    },
-    {
-      "painting": "ailunsamuna_2_hx",
-      "name": "Charming Rabbit（婚变）",
-      "derived": true,
       "camp": 1
     },
     {
@@ -101,12 +83,6 @@
       "name": "Loisirs balnéaires",
       "ship_group": 80801,
       "skin_id": 808012,
-      "camp": 8
-    },
-    {
-      "painting": "xukufu_3_hx",
-      "name": "Loisirs balnéaires（婚变）",
-      "derived": true,
       "camp": 8
     },
     {
@@ -159,22 +135,10 @@
       "camp": 1
     },
     {
-      "painting": "qiye_7_hx",
-      "name": "Wind Catcher（婚变）",
-      "derived": true,
-      "camp": 1
-    },
-    {
       "painting": "z23",
       "name": "Z23",
       "ship_group": 40123,
       "skin_id": 401230,
-      "camp": 4
-    },
-    {
-      "painting": "z23_hx",
-      "name": "Z23（婚变）",
-      "derived": true,
       "camp": 4
     },
     {
@@ -283,12 +247,6 @@
       "camp": 2
     },
     {
-      "painting": "chaijun_4_hx",
-      "name": "冰雪公主（婚变）",
-      "derived": true,
-      "camp": 2
-    },
-    {
       "painting": "tierbici_2",
       "name": "冰雪消融的夏日",
       "ship_group": 40502,
@@ -314,12 +272,6 @@
       "name": "不思议国度的白兔",
       "ship_group": 30129,
       "skin_id": 301292,
-      "camp": 3
-    },
-    {
-      "painting": "daofeng_5_hx",
-      "name": "不思议国度的白兔（婚变）",
-      "derived": true,
       "camp": 3
     },
     {
@@ -393,12 +345,6 @@
       "camp": 4
     },
     {
-      "painting": "ougen_6_hx",
-      "name": "沉醉于夜（婚变）",
-      "derived": true,
-      "camp": 4
-    },
-    {
       "painting": "gezi_2",
       "name": "赤红之月的幻想",
       "ship_group": 40507,
@@ -424,12 +370,6 @@
       "name": "春之华",
       "ship_group": 10213,
       "skin_id": 102131,
-      "camp": 1
-    },
-    {
-      "painting": "shengluyisi_2_hx",
-      "name": "春之华（婚变）",
-      "derived": true,
       "camp": 1
     },
     {
@@ -482,12 +422,6 @@
       "camp": 3
     },
     {
-      "painting": "dafeng_2_hx",
-      "name": "毒苹果（婚变）",
-      "derived": true,
-      "camp": 3
-    },
-    {
       "painting": "guanghui_7",
       "name": "二人的学习时间",
       "ship_group": 20703,
@@ -516,12 +450,6 @@
       "camp": 3
     },
     {
-      "painting": "longfeng_2_hx",
-      "name": "凤舞新年（婚变）",
-      "derived": true,
-      "camp": 3
-    },
-    {
       "painting": "aijier_2",
       "name": "港区的龙女仆",
       "ship_group": 49905,
@@ -533,12 +461,6 @@
       "name": "功夫少女！",
       "ship_group": 10324,
       "skin_id": 103242,
-      "camp": 1
-    },
-    {
-      "painting": "bulaimodun_4_hx",
-      "name": "功夫少女！（婚变）",
-      "derived": true,
       "camp": 1
     },
     {
@@ -591,22 +513,10 @@
       "camp": 1
     },
     {
-      "painting": "ankeleiqi_2_hx",
-      "name": "海豚、海洋、游泳课（婚变）",
-      "derived": true,
-      "camp": 1
-    },
-    {
       "painting": "aimudeng_2",
       "name": "黑白的夜之主",
       "ship_group": 40207,
       "skin_id": 402071,
-      "camp": 4
-    },
-    {
-      "painting": "aimudeng_2_hx",
-      "name": "黑白的夜之主（婚变）",
-      "derived": true,
       "camp": 4
     },
     {
@@ -617,22 +527,10 @@
       "camp": 9
     },
     {
-      "painting": "jialisuoniye_3_hx",
-      "name": "黑猫与南瓜之夜（婚变）",
-      "derived": true,
-      "camp": 9
-    },
-    {
       "painting": "xinnong_3",
       "name": "轰鸣的银轮",
       "ship_group": 30708,
       "skin_id": 307082,
-      "camp": 3
-    },
-    {
-      "painting": "xinnong_3_hx",
-      "name": "轰鸣的银轮（婚变）",
-      "derived": true,
       "camp": 3
     },
     {
@@ -675,12 +573,6 @@
       "name": "坏坏兔的恶作剧！",
       "ship_group": 21304,
       "skin_id": 213042,
-      "camp": 2
-    },
-    {
-      "painting": "abeikelongbi_3_hx",
-      "name": "坏坏兔的恶作剧！（婚变）",
-      "derived": true,
       "camp": 2
     },
     {
@@ -730,12 +622,6 @@
       "name": "金龙腾祥云",
       "ship_group": 49905,
       "skin_id": 499052,
-      "camp": 4
-    },
-    {
-      "painting": "aijier_3_hx",
-      "name": "金龙腾祥云（婚变）",
-      "derived": true,
       "camp": 4
     },
     {
@@ -893,12 +779,6 @@
       "camp": 1
     },
     {
-      "painting": "beikaluolaina_2_hx",
-      "name": "秘密的换装练习？（婚变）",
-      "derived": true,
-      "camp": 1
-    },
-    {
       "painting": "rangbaer_3",
       "name": "秘密的Après midi",
       "ship_group": 90501,
@@ -910,12 +790,6 @@
       "name": "秘密基地的Mercredi",
       "ship_group": 90111,
       "skin_id": 901112,
-      "camp": 9
-    },
-    {
-      "painting": "edu_3_hx",
-      "name": "秘密基地的Mercredi（婚变）",
-      "derived": true,
       "camp": 9
     },
     {
@@ -1028,12 +902,6 @@
       "name": "赛场上的电子妖精",
       "ship_group": 90402,
       "skin_id": 904021,
-      "camp": 9
-    },
-    {
-      "painting": "sitelasibao_2_hx",
-      "name": "赛场上的电子妖精（婚变）",
-      "derived": true,
       "camp": 9
     },
     {
@@ -1261,12 +1129,6 @@
       "camp": 4
     },
     {
-      "painting": "bisimai_2_hx",
-      "name": "铁血的辉光（婚变）",
-      "derived": true,
-      "camp": 4
-    },
-    {
       "painting": "kalangshitade_2",
       "name": "突击行动开始！",
       "ship_group": 71801,
@@ -1278,12 +1140,6 @@
       "name": "突袭！暗黑基地！",
       "ship_group": 70102,
       "skin_id": 701023,
-      "camp": 7
-    },
-    {
-      "painting": "weiyan_4_hx",
-      "name": "突袭！暗黑基地！（婚变）",
-      "derived": true,
       "camp": 7
     },
     {
@@ -1361,12 +1217,6 @@
       "name": "温泉放松时间",
       "ship_group": 31901,
       "skin_id": 319011,
-      "camp": 3
-    },
-    {
-      "painting": "jianye_2_hx",
-      "name": "温泉放松时间（婚变）",
-      "derived": true,
       "camp": 3
     },
     {
@@ -1493,12 +1343,6 @@
       "name": "心向何方的指导课",
       "ship_group": 39904,
       "skin_id": 399042,
-      "camp": 3
-    },
-    {
-      "painting": "wuqi_3_hx",
-      "name": "心向何方的指导课（婚变）",
-      "derived": true,
       "camp": 3
     },
     {

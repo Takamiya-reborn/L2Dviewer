@@ -33,7 +33,7 @@ files/
 └── ...
 ```
 
-皮肤标识通常是 `<舰娘拼音>_<皮肤序号>`，改造或婚纱变体可能带 `_hx` 后缀。`hashes-live2d.csv` 只负责定位和校验，模型、Animator、AnimationClip、纹理和自定义 MonoBehaviour 都位于对应 bundle。
+皮肤标识通常是 `<舰娘拼音>_<皮肤序号>`。索引中另存在 `_hx` 后缀的 bundle，是 CN 审核用的和谐变体（客户端在和谐模式下经 HXSet 自动改拉），本仓库不收录：拉取器与皮肤目录均默认跳过，一律使用非和谐版本。`hashes-live2d.csv` 只负责定位和校验，模型、Animator、AnimationClip、纹理和自定义 MonoBehaviour 都位于对应 bundle。
 
 一个皮肤在逻辑上由三组数据组成：
 
@@ -92,17 +92,17 @@ idle 是循环状态，不属于“反应动作播放中”。它没有普通动
 
 ## 4. 控制层和配置文件
 
-| 文件或目录                            | 运行时职责                                             |
-| ------------------------------------- | ------------------------------------------------------ |
-| `sharecfg/ship_l2d.lua`               | 每个皮肤的命中分区、参数机、触发器、动作状态和联动数据 |
+| 文件或目录                            | 运行时职责                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------- |
+| `sharecfg/ship_l2d.lua`               | 每个皮肤的命中分区、参数机、触发器、动作状态和联动数据                 |
 | `sharecfg/name_code.lua`              | 共用名模板的舰名代换表（皮肤名 `{namecode:N}` 占位符，如 Fletcher 级） |
-| `sharecfgdata/ship_skin_template.lua` | painting 名与数字皮肤 id 的映射                        |
-| `view/ship/live2d.lua`                | 动作播放、idle 切换、点击、动作结束回落                |
-| `view/ship/live2ddrag.lua`            | DragMachine、拖拽、按压、冷却、参数机联动              |
-| `view/ship/live2dextend.lua`          | 参数叠加、平滑、扩展动作门和特殊玩法                   |
-| `mgr/live2dmgr.lua`                   | Live2D 实例装配、生命周期和控制层管理                  |
-| prefab / AnimatorController           | Cubism 对象、Animator 参数、状态和转移                 |
-| AnimationClip                         | 参数、部件和 Transform 的时间曲线                      |
+| `sharecfgdata/ship_skin_template.lua` | painting 名与数字皮肤 id 的映射                                        |
+| `view/ship/live2d.lua`                | 动作播放、idle 切换、点击、动作结束回落                                |
+| `view/ship/live2ddrag.lua`            | DragMachine、拖拽、按压、冷却、参数机联动                              |
+| `view/ship/live2dextend.lua`          | 参数叠加、平滑、扩展动作门和特殊玩法                                   |
+| `mgr/live2dmgr.lua`                   | Live2D 实例装配、生命周期和控制层管理                                  |
+| prefab / AnimatorController           | Cubism 对象、Animator 参数、状态和转移                                 |
+| AnimationClip                         | 参数、部件和 Transform 的时间曲线                                      |
 
 `ship_l2d` 中每一项通常对应一台 DragMachine，字段包括 `draw_able_name`、`parameter`、`range`、`start_value`、`offset_x/y`、`smooth`、`revert`、`action_trigger`、`action_trigger_active`、`listener_data` 和 `relation_parameter`。
 
