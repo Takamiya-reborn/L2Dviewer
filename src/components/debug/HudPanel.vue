@@ -132,6 +132,8 @@ defineProps({
   showInject: { type: Boolean, default: false },
   /** 触点涟漪（游戏"触点特效"复刻）开关 */
   showRipple: { type: Boolean, default: true },
+  /** 誓约戒指开关（l2d/ring.js 写 Paramring 基值，游戏 ship.propose 语义） */
+  showRing: { type: Boolean, default: false },
   /** 锁帧开关：开启后 app.ticker 与 Ticker.shared 都锁 60fps（游戏参数机节拍） */
   lockFrame: { type: Boolean, default: false },
   /** 隐藏 dev 功能：收起其余工具按钮与调试/注入面板（给非开发者的测试员/用户留干净界面） */
@@ -140,7 +142,7 @@ defineProps({
   fps: { type: Number, default: 0 },
 })
 
-const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'toggle-inject', 'toggle-lockframe', 'toggle-hidedev', 'reset'])
+const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'toggle-ring', 'toggle-inject', 'toggle-lockframe', 'toggle-hidedev', 'reset'])
 </script>
 
 <template>
@@ -160,7 +162,10 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
     <button class="hint-toggle" type="button" @click="emit('toggle-hidedev')">
       {{ hideDev ? '显示dev功能' : '隐藏dev功能' }}
     </button>
-    <!-- 交互点：测试者也要用，不随 dev 隐藏收起 -->
+    <!-- 交互点/誓约戒指：测试者也要用，不随 dev 隐藏收起 -->
+    <button class="hint-toggle" type="button" :class="{ on: showRing }" @click="emit('toggle-ring')">
+      誓约戒指
+    </button>
     <button class="hint-toggle" type="button" :class="{ on: showHints }" @click="emit('toggle-hints')">
       交互点
     </button>

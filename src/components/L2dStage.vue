@@ -9,6 +9,7 @@ import { mountModel } from '../l2d/mount'
 import { createGestures } from '../l2d/gestures'
 import { createTickerCallback } from '../l2d/hud'
 import { createClickEffect } from '../l2d/clickEffect'
+import { createOathRing } from '../l2d/ring'
 import HudPanel from './debug/HudPanel.vue'
 
 const props = defineProps({
@@ -28,6 +29,9 @@ const showHints = ref(true)
 // 与游戏 SHOW_TOUCH_EFFECT 同语义（默认开），localStorage 持久化
 const showRipple = ref(localStorage.getItem('l2d.showClickRipple') !== '0')
 watch(showRipple, (v) => localStorage.setItem('l2d.showClickRipple', v ? '1' : '0'))
+// 誓约戒指（游戏 ship.propose 的外置开关，l2d/ring.js 逐帧写 Paramring）开关，localStorage 持久化
+const showRing = ref(localStorage.getItem('l2d.showOathRing') === '1')
+watch(showRing, (v) => localStorage.setItem('l2d.showOathRing', v ? '1' : '0'))
 // 调试信息（状态机 拖拽参数机 HUD 读数）独立于交互点开关；hud 为结构化数据；默认关闭，调试时再开
 const showDebug = ref(false)
 // 注入面板独立于调试信息开关；默认关闭
@@ -79,6 +83,7 @@ const ctx = {
   hintsCtl: null,
   actions: null,
   camera: null,
+  oathRing: null,
   dragScale: 1,
   lastGesture: 'tap',
   status,
@@ -151,6 +156,8 @@ onMounted(async () => {
   // 触点涟漪：独立于模型，只依赖 canvas 指针事件；update 走同一 ticker
   rippleCtl = createClickEffect(app, view, () => showRipple.value)
   app.ticker.add(() => rippleCtl.update(app.ticker.deltaMS / 1000))
+  // 誓约戒指控制层：开关状态读取器传响应式 ref，换挂载时 attach 即按当前状态补账
+  ctx.oathRing = createOathRing(() => showRing.value)
   app.ticker.add(createTickerCallback(ctx))
   // FPS 用 0.5s 窗口帧计数：ticker.FPS 读的 elapsedMS 在节流跳帧期间仍每 rAF 重算，采样会落中
   // 跳帧周期的短读数（锁帧时显示 100+）；ticker 监听器只在帧真正执行的 tick 触发，计数即真实帧率
@@ -202,9 +209,9 @@ defineExpose({ play: (group) => ctx.actions.playMotion(group) })
   <div class="stage">
     <div ref="canvasHost" class="canvas-host" />
     <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :show-inject="showInject" :show-ripple="showRipple"
-      :lock-frame="lockFrame" :hide-dev="hideDev" :fps="fps" @toggle-hints="showHints = !showHints"
+      :show-ring="showRing" :lock-frame="lockFrame" :hide-dev="hideDev" :fps="fps" @toggle-hints="showHints = !showHints"
       @toggle-debug="showDebug = !showDebug" @toggle-inject="showInject = !showInject"
-      @toggle-ripple="showRipple = !showRipple"
+      @toggle-ripple="showRipple = !showRipple" @toggle-ring="showRing = !showRing"
       @toggle-lockframe="lockFrame = !lockFrame" @toggle-hidedev="hideDev = !hideDev"
       @reset="actions.resetInteraction()" />
     <p v-if="status" class="status">{{ status }}</p>

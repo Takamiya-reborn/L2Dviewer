@@ -36,11 +36,28 @@ function readCatalog() {
   return JSON.parse(readFileSync(CATALOG_PATH, 'utf8'))
 }
 
+// 常见模拟器 adb 端口：AVD/LDPlayer 5555-5559、MuMu 7555/16384、Nox 62001/62025、逍遥 21503。
+// 第三方模拟器不向 adb server 自动登记（AVD 例外），设备列表为空时逐口 connect 一次再重查；
+// 连接登记持久留在 server 里，非 adb 端口 connect 失败只留 offline 表项不影响后续。
+const EMULATOR_PORTS = [5555, 5556, 5557, 5558, 5559, 7555, 16384, 62001, 62025, 21503]
+// 端口扫描节流：无在线设备时最快 30s 扫一轮（connect 挂死端口单次最长 ADB_TIMEOUT，不节流会拖死每次查询）
+let lastScanAt = 0
+
 // adb devices 解析 + 在线设备补型号。软失败：adb 不存在/超时一律空列表（没设备不是服务器错误）。
 function queryDevices() {
   if (!existsSync(ADB)) return []
-  const r = spawnSync(ADB, ['devices', '-l'], { encoding: 'utf8', timeout: ADB_TIMEOUT, windowsHide: true })
+  let r = spawnSync(ADB, ['devices', '-l'], { encoding: 'utf8', timeout: ADB_TIMEOUT, windowsHide: true })
   if (r.status !== 0 || !r.stdout) return []
+  if (!r.stdout.split('\n').some((line) => line.trim().split(/\s+/)[1] === 'device')) {
+    if (Date.now() - lastScanAt > 30_000) {
+      lastScanAt = Date.now()
+      for (const port of EMULATOR_PORTS) {
+        spawnSync(ADB, ['connect', `127.0.0.1:${port}`], { timeout: ADB_TIMEOUT, windowsHide: true })
+      }
+      r = spawnSync(ADB, ['devices', '-l'], { encoding: 'utf8', timeout: ADB_TIMEOUT, windowsHide: true })
+      if (r.status !== 0 || !r.stdout) return []
+    }
+  }
   const devices = []
   for (const line of r.stdout.replace(/\r/g, '').split('\n')) {
     const parts = line.trim().split(/\s+/)

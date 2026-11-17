@@ -110,6 +110,8 @@ async function mountModelInner(ctx, url) {
     return
   }
   ctx.runtime = new InteractionRuntime(model, interaction)
+  // 誓约戒指覆盖层：afterMotionUpdate 逐帧写开关值（见 l2d/ring.js）
+  ctx.oathRing?.attach(model)
   // 动作边界预热：节点跟随每支动作实际驱动的状态/摆位参数（表外回零边补账）
   ctx.runtime.attachMotions(url)
   // 库的 idle 自启挂在 Ticker.shared（Live2DModel.from 的 init 即注册共享 ticker），首个 tick 早于本行——from 之后这里已串行 await 了氛围层/交互数据，auto idle 的 motionStart 已错过且无人监听；循环 idle 永不 motionFinish、重播同支又被 MotionState.reserve 拒绝，此后再无 motionStart
