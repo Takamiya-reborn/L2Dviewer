@@ -5,7 +5,7 @@ import { Cubism4InternalModel, Cubism4MotionManager, CubismModel, Live2DModel, c
 let installed = false
 
 // 内核求值循环按曲线类型顺序遍历（Model→Parameter→PartOpacity 三段各一个循环，遇类型切换即停），
-// 曲线数组里目标混排时其后所有同型曲线整体失去求值（官方 motion3 约定按目标分组排序，extract.py 未保证）
+// 曲线数组里目标混排时其后所有同型曲线整体失去求值（官方 motion3 约定按目标分组排序，extract.js 已保证（按目标分组排序落盘））
 const TARGET_ORDER = { Model: 0, Parameter: 1, PartOpacity: 2 }
 
 /**
@@ -44,7 +44,7 @@ export function installMotionPatches(ctx) {
 
   /**
    * 动作交叉渐变（时序链：queueManager.startMotion 对旧动作 setFadeOut，新动作按 fadeIn 权重从旧姿态混合进去——权重走 getEasingSine 阻尼曲线）。
-   * 碧蓝航线的 motion3.json 全部没有声明 FadeInTime/FadeOutTime，Cubism 内核此时缺省 1s，故渐变时长不能走内核缺省：游戏端 Unity Animator 每条 AnyState 转场自带过渡时长（extract.py 的 animator_fades 提取为 <skin>.fades.json：系统/触摸老条目 0.5s、新条目与 _ex 变体 0.25s、login/home/change_* 0s 硬切），createMotion 补丁按 clip 名查表逐动作设置，表缺 clip 时退回下方 config 的 300ms。
+   * 碧蓝航线的 motion3.json 全部没有声明 FadeInTime/FadeOutTime，Cubism 内核此时缺省 1s，故渐变时长不能走内核缺省：游戏端 Unity Animator 每条 AnyState 转场自带过渡时长（extract.js 的 animatorFades 提取为 <skin>.fades.json：系统/触摸老条目 0.5s、新条目与 _ex 变体 0.25s、login/home/change_* 0s 硬切），createMotion 补丁按 clip 名查表逐动作设置，表缺 clip 时退回下方 config 的 300ms。
    * 若开关参数在渐变期出现穿模（半透明道具/错位缩放），用逐曲线 fade 定点硬切（motion.setParameterFadeInTime(pid, 0)，内核语义：该曲线权重恒 1 随新动作瞬时切换），不要整体归零——0..1 参数里有呼吸/眨眼/脸颊这类必须渐变的，按范围判定会误伤。
    */
   config.motionFadingDuration = 300

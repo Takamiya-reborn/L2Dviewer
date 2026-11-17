@@ -1,0 +1,184 @@
+// Lua 快照解析与 ship_l2d 配置烘焙：解析社区快照中的规范 Lua 表，
+// 按皮肤 id 归集 ship_l2d 条目并落模型目录内的 l2d.json。
+
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+
+const LUA_ENTRY_RE = /^\tpg\.base\.ship_l2d\[(\d+)\] = \{$/gm
+const LUA_TEMPLATE_RE = /^_G\.pg\.base\.ship_skin_template\[(\d+)\] = \{$/gm
+const LUA_IDENT_RE = /[A-Za-z_]\w*/y
+
+// 解析社区快照中的规范 Lua 表
+class LuaParser {
+    constructor(text) {
+        this.text = text
+        this.pos = 0
+    }
+
+    parse() {
+        return this.value()
+    }
+
+    skip() {
+        while (this.pos < this.text.length && ' \t\r\n'.includes(this.text[this.pos])) this.pos++
+    }
+
+    value() {
+        this.skip()
+        const char = this.text[this.pos]
+        if (char === '{') return this.table()
+        if (char === '"') {
+            const end = this.text.indexOf('"', this.pos + 1)
+            const value = this.text.slice(this.pos + 1, end)
+            this.pos = end + 1
+            return value
+        }
+        const rest = this.text.slice(this.pos)
+        const number = rest.match(/^[-+0-9.eE]+/)
+        if (number) {
+            const value = number[0]
+            this.pos += value.length
+            return value.includes('.') || value.toLowerCase().includes('e') ? parseFloat(value) : parseInt(value)
+        }
+        for (const [word, val] of [['true', true], ['false', false], ['nil', null]]) {
+            if (this.text.startsWith(word, this.pos)) {
+                this.pos += word.length
+                return val
+            }
+        }
+        throw new Error(`无法解析 Lua 值: ${JSON.stringify(this.text.slice(this.pos, this.pos + 40))}`)
+    }
+
+    table() {
+        this.pos += 1
+        const table = {}
+        const array = []
+        for (;;) {
+            this.skip()
+            if (this.pos >= this.text.length) throw new Error('Lua 表在闭合前结束')
+            if (this.text[this.pos] === '}') {
+                this.pos += 1
+                return array.length ? array : table
+            }
+            LUA_IDENT_RE.lastIndex = this.pos
+            const ident = LUA_IDENT_RE.exec(this.text)
+            if (ident) {
+                const save = this.pos
+                this.pos = ident.index + ident[0].length
+                this.skip()
+                if (this.pos < this.text.length && this.text[this.pos] === '=') {
+                    this.pos += 1
+                    table[ident[0]] = this.value()
+                    this.comma()
+                    continue
+                }
+                this.pos = save
+            }
+            array.push(this.value())
+            this.comma()
+        }
+    }
+
+    comma() {
+        this.skip()
+        if (this.pos < this.text.length && this.text[this.pos] === ',') this.pos += 1
+    }
+}
+
+function luaBlock(text, matches, index) {
+    const end = index + 1 < matches.length ? matches[index + 1].index : text.length
+    return new LuaParser(`{${text.slice(matches[index].index + matches[index][0].length, end)}`).parse()
+}
+
+function readSkinTemplate(text, skinId) {
+    const matches = [...text.matchAll(LUA_TEMPLATE_RE)]
+    for (let index = 0; index < matches.length; index++) {
+        if (parseInt(matches[index][1]) === skinId) return luaBlock(text, matches, index)
+    }
+    throw new Error(`ship_skin_template 中没有皮肤 ${skinId}`)
+}
+
+function readTemplateByPainting(text, painting) {
+    const matches = [...text.matchAll(LUA_TEMPLATE_RE)]
+    const lineRe = new RegExp(`^\\tpainting = "${painting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}",$`, 'gm')
+    for (const line of text.matchAll(lineRe)) {
+        const owners = matches.filter((m) => m.index < line.index)
+        if (owners.length) {
+            const owner = owners[owners.length - 1]
+            return luaBlock(text, matches, matches.indexOf(owner))
+        }
+    }
+    throw new Error(`ship_skin_template 中没有 painting ${painting}`)
+}
+
+function parseShipL2d(text, skinId) {
+    const matches = [...text.matchAll(LUA_ENTRY_RE)]
+    const entries = []
+    for (let index = 0; index < matches.length; index++) {
+        const key = parseInt(matches[index][1])
+        if (Math.floor(key / 100) === skinId) {
+            entries.push({ key, ...luaBlock(text, matches, index) })
+        }
+    }
+    return entries
+}
+
+// 从已落盘的 interaction.json 读 idle 变体索引：actionId=1 的状态按 subIndex 升序 -> clip 名
+function idleIndex(modelDir, modelId) {
+    const path = join(modelDir, `${modelId}.interaction.json`)
+    if (!existsSync(path)) return {}
+    const states = JSON.parse(readFileSync(path, 'utf8')).animator?.states ?? []
+    const entries = states
+        .filter((s) => s.actionId === 1 && s.clip)
+        .map((s) => [s.subIndex, s.clip])
+        .sort((a, b) => a[0] - b[0])
+    return Object.fromEntries(entries)
+}
+
+// 把本地 Lua 快照烘焙为模型目录内的 l2d.json。skinRef 是皮肤 id 或 painting 名。
+// log: { info(msg), warn(msg) }——warn 自动带 [warn] 前缀（由 CLI 层统一加工）。
+export function bakeL2d(root, modelDir, modelId, server, skinRef, log) {
+    const luaRoot = resolve(root, '.tmp', 'lua', server)
+    const luaPath = join(luaRoot, 'sharecfg', 'ship_l2d.lua')
+    const templatePath = join(luaRoot, 'sharecfgdata', 'ship_skin_template.lua')
+    if (!existsSync(luaPath) || !existsSync(templatePath)) {
+        log.warn(`Lua 快照不存在，跳过 l2d.json（服务器: ${server}）`)
+        return false
+    }
+
+    const templateText = readFileSync(templatePath, 'utf8')
+    let skinId
+    let painting
+    let template
+    if (/^\d+$/.test(skinRef)) {
+        skinId = parseInt(skinRef)
+        template = readSkinTemplate(templateText, skinId)
+        painting = template.painting
+    } else {
+        painting = skinRef
+        template = readTemplateByPainting(templateText, painting)
+        skinId = parseInt(template.id)
+    }
+
+    const l2dIds = template.ship_l2d_id
+    if (!Array.isArray(l2dIds) || !l2dIds.length) {
+        log.warn(`皮肤 ${skinId}（${painting}）没有 ship_l2d_id，跳过 l2d.json`)
+        return false
+    }
+    const byKey = new Map(parseShipL2d(readFileSync(luaPath, 'utf8'), skinId).map((e) => [e.key, e]))
+    const missing = l2dIds.filter((key) => !byKey.has(key))
+    if (missing.length) throw new Error(`ship_l2d.lua 缺少条目: ${JSON.stringify(missing)}`)
+
+    const product = {
+        skin_id: skinId,
+        name: template.name,
+        ship_group: template.ship_group,
+        live2d_offset: template.live2d_offset,
+        idle_index: idleIndex(modelDir, modelId),
+        entries: l2dIds.map((key) => byKey.get(key)),
+    }
+    const dest = join(modelDir, `${modelId}.l2d.json`)
+    writeFileSync(dest, JSON.stringify(product, null, 2))
+    log.info(`  l2d: ${dest}（${product.entries.length} 台机器）`)
+    return true
+}

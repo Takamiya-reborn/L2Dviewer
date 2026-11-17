@@ -9,7 +9,7 @@
 使用 adb 连接模拟器或设备并拉取指定皮肤：
 
 ```bash
-uv run scripts/pull_bundles.py <skin_id> --host [host:port]
+node scripts/pull_bundles.js <skin_id> --host [host:port]
 ```
 
 脚本从设备的 `files/AssetBundles/live2d/` 获取 bundle，索引和临时文件放在 `.tmp/`，bundle 默认落在 `.tmp/bundles/`。也可以手动提供 bundle 路径给提取脚本。
@@ -19,24 +19,24 @@ uv run scripts/pull_bundles.py <skin_id> --host [host:port]
 需要还原拖拽参数机和游戏交互配置时，拉取 Lua 快照：
 
 ```bash
-python scripts/pull_lua.py                  # 默认 CN
-python scripts/pull_lua.py --server JP
+node scripts/pull_lua.js                   # 默认 CN
+node scripts/pull_lua.js --server JP
 ```
 
 快照固定放在 `.tmp/lua/<服务器>/`。没有 Lua 快照时仍能提取模型和基础点击/视线拖拽，但不会生成完整的 `l2d.json`，查看器会旁路参数机层。
 
 ### 1.3 可选的 C# 语义参考
 
-需要核对命中路由或控制层语义时，使用 `pull_cs.py` 拉 APK 并用 Il2CppDumper 生成 dump，再用 `disasm.py` 对指定方法做定点反汇编。它们用于解释行为，不参与标准模型文件的生成。
+需要核对命中路由或控制层语义时，使用 `pull_cs.js` 拉 APK 并用 Il2CppDumper 生成 dump，再用 `disasm.js` 对指定方法做定点反汇编。它们用于解释行为，不参与标准模型文件的生成。
 
 ## 2. 解包 bundle
 
 ```bash
-uv run scripts/extract.py <skin_id>
-python scripts/extract.py <bundle_path> <out_dir>
+node scripts/extract.js <skin_id>
+node scripts/extract.js <bundle_path> <out_dir>
 ```
 
-第一种形式从 `.tmp/bundles/` 查找 bundle，并将结果写入 `models/<角色>/<skin_id>/`；第二种形式显式指定输入和输出目录。`extract.py` 使用 UnityPy 读取 UnityFS 和 prefab 的 typetree，按对象类型收集 Cubism 模型、物理、贴图、Animator、AnimationClip 与游戏自定义组件。
+第一种形式从 `.tmp/bundles/` 查找 bundle，并将结果写入 `models/<角色>/<skin_id>/`；第二种形式显式指定输入和输出目录。`extract.js` 使用 unityfs-js 读取 UnityFS 和 prefab 的 typetree，按对象类型收集 Cubism 模型、物理、贴图、Animator、AnimationClip 与游戏自定义组件。
 
 ## 3. 解析与转换
 
@@ -118,5 +118,5 @@ AnyState 转移自带过渡时长（`m_TransitionDuration`，`m_HasFixedDuration
 - 未取得 Lua 快照时，`l2d.json` 不完整，参数机层会被跳过；
 - 个别 CRC32 绑定可能无法映射到 Transform，脚本会告警并保留原始绑定；
 - 口型和 CRI 语音驱动不在提取范围内；
-- muscle-clip 的解码依据 UnityPy 1.9.28 的实现，其他版本尚未完整验证；
+- muscle-clip 的解码依据 Unity 序列化规范实现（流式斜率递推与 UnityPy 1.9.28 逐位一致）；
 - 模型目录属于从游戏客户端提取的资源，不应提交或再分发。

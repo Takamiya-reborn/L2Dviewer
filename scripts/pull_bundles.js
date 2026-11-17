@@ -58,7 +58,9 @@ function deviceIdentity(serial) {
         const out = adb(['shell', 'getprop', prop], serial).trim()
         if (out) return out
     }
-    return serial
+    // 部分模拟器不提供硬件序列号属性，改用 android_id（同一设备各连接路一致）
+    const androidId = adb(['shell', 'settings', 'get', 'secure', 'android_id'], serial).trim()
+    return /^[0-9a-fA-F]+$/.test(androidId) && androidId !== 'null' ? androidId : serial
 }
 
 // 不指定 --serial 时自动选定设备；同一物理设备的重复条目收敛为一台

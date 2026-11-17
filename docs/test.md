@@ -37,7 +37,7 @@ scripts/tests/
 
 单独跑某一支：`node scripts/tests/unit/test_dragmachine.mjs`。
 
-**脚本层设计边界**（定案）：前端交互与注入 = JS 脚本（src/ + scripts/tests/\*.mjs），本地文件操作与处理 = py 脚本（extract.py / extract.py）。例外：probe/ 直读 moc3 的脚本必须是 JS——moc3 解析依赖 Cubism Core 的 wasm，Python 无等价能力；边界划在格式解析器归属上（moc3 是前端资产格式，不是普通本地文件）。
+**脚本层设计边界**（定案）：前端交互与注入 = JS 脚本（src/ + scripts/tests/\*.mjs），本地文件操作与处理同样是 JS 脚本（scripts/ 下的提取与拉取工具，extract.js + extract/ 模块）。全仓单一 Node 工具链；extract/ 直读 moc3 二进制节表取参数量程，不依赖 Cubism Core。
 
 ## 各脚本的使用场景
 
@@ -194,4 +194,4 @@ finish(); // 打印汇总（含失败名单）与 SUMMARY 行，按失败数设�
 - 依赖真实资产的测试放 asset/ 且缺资产时跳过；依赖 Cubism Core 全局的（test_interaction）import 前先 `loadCubismCore()`。
 - 机器步进用假时钟（自己累加 `1/60` 逐帧调 `step`），不 sleep 真实时间。
 - **机器一律按条目 id 取**（machinesById/machineById）：orch.machines 的顺序 = entries 数组顺序而非 id 序，entries 中部插条目后位置解构会整体错位（trigger_types 段曾因此 6 项假失败）。
-- 文件操作/提取/转换类工具写 Python 进 scripts/，不进本目录（设计边界见上文）。
+- 文件操作/提取/转换类工具写 JS 进 scripts/（extract.js + extract/），不进本目录（设计边界见上文）。

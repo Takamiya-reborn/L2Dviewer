@@ -129,7 +129,7 @@ export class InteractionRuntime {
     this._syncBoundary(clipName, state, carry, seq)
   }
 
-  /** 表外补全：节点跟随本支动作**实际驱动**的状态/摆位参数。state/carry 表剔除了首末均为 0 的开关（extract.py clip_boundary_state），但那正是有向图的回零边——基础 idle 曲线恒 0 而无表项时，节点学不到"已归零"，起播缓动会按滞留的旧节点值把开关再次摆出；对表里没记的参数按 motion3 真实末值补账，边界数据与提取同源（同一份 motion3 文件），无需重新提取 */
+  /** 表外补全：节点跟随本支动作**实际驱动**的状态/摆位参数。state/carry 表剔除了首末均为 0 的开关（extract.js clipBoundaryState），但那正是有向图的回零边——基础 idle 曲线恒 0 而无表项时，节点学不到"已归零"，起播缓动会按滞留的旧节点值把开关再次摆出；对表里没记的参数按 motion3 真实末值补账，边界数据与提取同源（同一份 motion3 文件），无需重新提取 */
   _syncBoundary(clipName, state, carry, seq) {
     this.loadMotionBoundary(clipName).then((boundary) => {
       if (!boundary || seq !== this._applyEndSeq) return
@@ -258,7 +258,7 @@ export class InteractionRuntime {
   }
 
   /**
-   * 点击门控：与跟踪节点比对而非实时参数（实时值受逐帧曲线与眨眼/呼吸扰动）。前置只取起播值=1、可产出且 moc 默认即满足的开关（见构造函数 gatedPids）——起播值=1 意味着动作依赖该图层/道具已摊开/已持有，不符则不可触发（如道具被收起时其分支不可达）；默认值给不出的"=1 起播"不构成前置（动作曲线自己驱动该参数，游戏干净态全部基础反应放行；菜单分支这类默认态不可达的门控由参数机层负责）。未收录/无开关参数的反应动作（touch_drag 系等，extract.py 只落盘有事件或边界数据的 clip）在游戏里由控制器状态而非参数门控。
+   * 点击门控：与跟踪节点比对而非实时参数（实时值受逐帧曲线与眨眼/呼吸扰动）。前置只取起播值=1、可产出且 moc 默认即满足的开关（见构造函数 gatedPids）——起播值=1 意味着动作依赖该图层/道具已摊开/已持有，不符则不可触发（如道具被收起时其分支不可达）；默认值给不出的"=1 起播"不构成前置（动作曲线自己驱动该参数，游戏干净态全部基础反应放行；菜单分支这类默认态不可达的门控由参数机层负责）。未收录/无开关参数的反应动作（touch_drag 系等，extract.js 只落盘有事件或边界数据的 clip）在游戏里由控制器状态而非参数门控。
    * 手势只在等待态被处理（动作播放中途控制器不响应手势，见下方实现）：idle 循环算等待态（pendingIdle），反应动作播完由编排器显式回落 idle、等待态即恢复；菜单摊开后的拖拽分支在 pending 清空后照常可达。
    */
   canPlay(clipName) {
@@ -346,7 +346,7 @@ export class InteractionRuntime {
   }
 
   /**
-   * 命中区名 -> 动作播放（MotionPriority.FORCE）。分区名即动作文件名（见 extract.py 的 HitAreas 生成）：touch_idle3/touch_drag5 等分区各对应组里的具体一支，点哪个部位播哪支；摸头/普通触摸等则恰好有同名组。
+   * 命中区名 -> 动作播放（MotionPriority.FORCE）。分区名即动作文件名（见 extract.js 的 HitAreas 生成）：touch_idle3/touch_drag5 等分区各对应组里的具体一支，点哪个部位播哪支；摸头/普通触摸等则恰好有同名组。
    * 分区对应动作被门控挡下时，在组内随机挑一支当前可达的；组内全部不可达则不播——这还原了游戏"点特定地方进入交互"的状态机行为：菜单收起时点触摸区会播 touch_idle1（摊开菜单），菜单摊开时点对话区播对应分支，点完收尾分支后回到可再进入的状态。
    *
    * @returns {null | {group: string}} 实际播放的动作组名；无动作/全部被拦下返回 null

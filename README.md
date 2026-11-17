@@ -7,8 +7,7 @@
 ![Vue 3](https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vuedotjs&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
 ![PixiJS](https://img.shields.io/badge/PixiJS-E72264?style=flat-square)
-![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)
-![uv](https://img.shields.io/badge/uv-DE5FE9?style=flat-square&logo=uv&logoColor=white)
+![Node](https://img.shields.io/badge/Node-339933?style=flat-square&logo=nodedotjs&logoColor=white)
 ![adb](https://img.shields.io/badge/adb-3DDC84?style=flat-square&logo=android&logoColor=white)
 
 </div>
@@ -16,7 +15,7 @@
 碧蓝航线 Live2D 皮肤查看器。从游戏客户端提取 Live2D 资源，重组为标准 Cubism 模型（Cubism 4 与 5 两代 moc3），在浏览器中原画质还原角色的动画与交互（待机、点击反应、拖拽视线跟随等），并提供按角色/皮肤分类的图鉴浏览。
 
 - [azurlane.md](docs/azurlane.md) — 游戏资源格式与交互状态机原理
-- [unpack.md](docs/unpack.md) — 提取脚本 `extract.py` 的用法、产物与转换细节
+- [unpack.md](docs/unpack.md) — 提取脚本 `extract.js` 的用法、产物与转换细节
 - `scripts/` 下各脚本的命令行用法以文件头部说明为准
 
 ## 目录
@@ -45,7 +44,7 @@
 | ---------- | ---------------------------------- | ----------------------------------------------------- |
 | 前端框架   | Vue 3 + Vite                       | 图鉴页面与皮肤清单                                    |
 | 渲染       | PixiJS + pixi-live2d-display       | L2D 舞台渲染（Cubism 4/5 模型）                       |
-| 提取工具链 | Python + UnityPy                   | 解包 UnityFS、读 moc3/贴图/动画曲线                   |
+| 提取工具链 | Node + unityfs-js                  | 解包 UnityFS、读 moc3/贴图/动画曲线（ASTC 贴图 texture2ddecoder-wasm） |
 | 动画转换   | Unity AnimationClip → motion3.json | 关键帧曲线换算 Cubism 贝塞尔段                        |
 | 逆向参考   | Il2CppDumper                       | dump 游戏 C# 程序集（逆向期语义参考，使用流程不需要） |
 | 资源采集   | adb                                | 从模拟器/设备拉取游戏资源                             |
@@ -66,7 +65,7 @@
 ## 项目结构
 
 ```
-scripts/              # 提取脚本：pull_bundles.py（资源拉取）、pull_lua.py（Lua 快照拉取）、extract.py（解包重组并烘焙交互配置与 fades.json）；pull_cs.py / disasm.py 为逆向期 C# 语义核对（使用流程不需要）
+scripts/              # 提取脚本：pull_bundles.js（资源拉取）、pull_lua.js（Lua 快照拉取）、extract.js + extract/（解包重组并烘焙交互配置与 fades.json）；pull_cs.js / disasm.js 为逆向期 C# 语义核对（使用流程不需要）
 tools/adb/            # Android 平台工具（Apache 2.0，NOTICE 随目录分发）
 tools/Il2CppDumper/   # 游戏 C# 程序集 dump 工具（MIT，逆向期参考，仅保留 x64 主程序与 config.json）
 models/               # 导出的标准 Cubism 模型（moc3 v4/v5），按 <角色>/<皮肤id> 两级目录组织（不入库）
@@ -76,55 +75,36 @@ src/                  # Vue 前端（图鉴 + L2D 舞台 + 交互层）
 └── utils/            # 交互实现：interaction/（状态机运行时、网格命中、提示层）、dragmachine/（拖拽参数机 machine/orchestrator/triggers）、ambient（effect 氛围层）、models（皮肤清单）
 ```
 
-`.tmp/` 为管线工作目录（gitignore），由脚本按需自动创建：`pull_bundles.py` 建 `.tmp/bundles/`，游戏 Lua 参考快照由 `pull_lua.py` 拉到 `.tmp/lua/`（见下）。
+`.tmp/` 为管线工作目录（gitignore），由脚本按需自动创建：`pull_bundles.js` 建 `.tmp/bundles/`，游戏 Lua 参考快照由 `pull_lua.js` 拉到 `.tmp/lua/`（见下）。
 
 ## 使用
 
-想使用查看器，把下面几个脚本按顺序跑一遍即可，文件处理全程自动，无需手工登记。`scripts/` 下的脚本可以使用 uv、venv/virtualenv 或全局 Python。先任选一种方式安装依赖，并使用同一个 Python 环境执行脚本：
+想使用查看器，把下面几个脚本按顺序跑一遍即可，文件处理全程自动，无需手工登记。提取工具链是纯 Node，`npm install` 一次即可：
 
 ```bash
-# uv
-uv venv
-uv pip install -r requirements.txt
-uv run scripts/<脚本>.py …
-
-# venv / virtualenv
-python -m venv .venv
-.venv/Scripts/python.exe -m pip install -r requirements.txt
-.venv/Scripts/python.exe scripts/<脚本>.py …
-
-# 全局 Python（不创建虚拟环境）
-python -m pip install -r requirements.txt
-python scripts/<脚本>.py …
-```
-
-Windows 下也可以把 `python` 换成 `py -3` 或目标 Python 的完整路径；关键是安装依赖和执行脚本使用同一个解释器。下方示例沿用全局 `python` 写法，使用其他环境时将其替换为对应命令即可。
-
-```bash
-# 1. 安装 Node 和 Python 依赖
+# 1. 安装依赖
 npm install
-python -m pip install -r requirements.txt # 也可按上方说明使用 uv 或 .venv
 
 # 2. 从设备拉取皮肤 bundle（模拟器 adb 地址按需调整）
 #    如果不知道皮肤id是什么就使用 --list <关键词>
 #    资源关键词就直接是拼音拼的
-#    比如: uv run script/pull_bundles.py --list wuzang
-uv run scripts/pull_bundles.py <skin_id>
+#    比如: node scripts/pull_bundles.js --list wuzang
+node scripts/pull_bundles.js <skin_id>
 
-# 3. 拉取游戏 Lua 快照（路径固定 .tmp/lua/<服务器>/，extract.py 自动读取；
+# 3. 拉取游戏 Lua 快照（路径固定 .tmp/lua/<服务器>/，extract.js 自动读取；
 #    默认 CN，--server JP 拉日本服；
 #    文件清单与目录结构见 docs/azurlane.md 第 1 节；来源 AzurLaneLuaScripts，
 #    需要代理时用 --proxy 或 HTTPS_PROXY 环境变量）
-python scripts/pull_lua.py
+node scripts/pull_lua.js
 
 # 4. 解包重组为标准 Cubism 模型（v4/v5），并自动烘焙 ship_l2d 交互配置
-uv run scripts/extract.py <skin_id>
+node scripts/extract.js <skin_id>
 
 # 5. 启动查看
 npm run dev       # dev server 实时扫描 models/ 生成皮肤清单，新增皮肤刷新页面即生效
 ```
 
-以上流程不涉及 `tools/Il2CppDumper/`：它是逆向期理解游戏 C# 语义的参考工具（见 [azurlane.md](docs/azurlane.md)“逆向参考文件”），跑通查看器用不到，`tools/adb/` 则由第 2 步的 `pull_bundles.py` 调用。
+以上流程不涉及 `tools/Il2CppDumper/`：它是逆向期理解游戏 C# 语义的参考工具（见 [azurlane.md](docs/azurlane.md)“逆向参考文件”），跑通查看器用不到，`tools/adb/` 则由第 2 步的 `pull_bundles.js` 调用。
 
 ## 测试
 

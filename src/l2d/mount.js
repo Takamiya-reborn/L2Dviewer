@@ -62,7 +62,7 @@ async function mountModelInner(ctx, url) {
   model.internalModel.breath?.setParameters?.([])
   // 装配序列未走完前不上台，揭幕在挂载尾部
   model.visible = false
-  // 逐 clip 转场时长表（<id>.fades.json，extract.py 的 animator_fades 从 bundle 的 AnimatorController 提取）：motionPatches.createMotion 按它设置动作渐入时长，动作起播的复位缓动窗口也取同一值——两处严格同源
+  // 逐 clip 转场时长表（<id>.fades.json，extract.js 的 animatorFades 从 bundle 的 AnimatorController 提取）：motionPatches.createMotion 按它设置动作渐入时长，动作起播的复位缓动窗口也取同一值——两处严格同源
   // 缺失时全旁路（渐变走 config 兜底 300ms、复位走 RESET_FADE 兜底）
   ctx.fades = await fetch(url.replace(/model3\.json$/, 'fades.json'))
     .then((r) => (r.ok ? r.json() : null))
@@ -122,7 +122,7 @@ async function mountModelInner(ctx, url) {
   installPalette(ctx, model)
   // 平滑复位每帧落笔：先于机器叠加层的 restoreLayer 注册（同事件按注册序触发）——机器加/乘参数的底值还原保持原语义，不被缓动写入覆盖
   model.internalModel.on('beforeMotionUpdate', () => ctx.runtime.applySmoothReset())
-  // 拖拽参数机：数据与模型同目录（<id>.l2d.json，extract.py 烘焙产物）；播放回调解析 clip 名 -> 动作组（白名单里存的是 clip 名，如 touch_idle1、idle1），机器分区命中后由编排器接管路由
+  // 拖拽参数机：数据与模型同目录（<id>.l2d.json，extract.js 烘焙产物）；播放回调解析 clip 名 -> 动作组（白名单里存的是 clip 名，如 touch_idle1、idle1），机器分区命中后由编排器接管路由
   const l2dConfig = await loadL2dConfig(url)
   if (stale()) {
     model.destroy()
