@@ -26,6 +26,7 @@
 - [项目结构](#项目结构)
 - [使用](#使用)
 - [测试](#测试)
+- [贡献](#贡献)
 - [致谢](#致谢)
 
 ## 版权说明
@@ -145,6 +146,10 @@ node scripts/tests/run_all.mjs interaction
 测试入口会自动发现并串行运行全部 `test_*.mjs` 文件，最后按退出码汇总结果。
 
 `scripts/tests/probe/` 另有不进测试入口的诊断 CLI——交互管线场景重放与分区审计（drive.mjs）、复位/姿态差分（diff.mjs）、moc3 资产与配置阅读（moc3.mjs / config.mjs）等，排查“点击不触发/播错动作/扭曲错位”类运行时问题时手动运行，用法见 [docs/test.md](docs/test.md)。
+
+## 贡献
+
+欢迎以 Issue 反馈问题、以 Pull Request 提交改进。环境准备、测试要求、提交规范与版权红线见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 致谢
 
