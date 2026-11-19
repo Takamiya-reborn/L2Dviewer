@@ -1,5 +1,5 @@
 {
-  "version": "0.0.1605",
+  "version": "0.0.1620",
   "entries": [
     {
       "painting": "junhe_4",
@@ -1108,6 +1108,13 @@
       "camp": 2
     },
     {
+      "painting": "shuixinghao_2",
+      "name": "天使降临之日",
+      "ship_group": 960017,
+      "skin_id": 9600171,
+      "camp": 96
+    },
+    {
       "painting": "pinghai_6",
       "name": "甜蜜嫣红",
       "ship_group": 50203,
@@ -1253,6 +1260,13 @@
       "ship_group": 30311,
       "skin_id": 303117,
       "camp": 3
+    },
+    {
+      "painting": "nabulesi_3",
+      "name": "误入纯白迷途",
+      "ship_group": 69902,
+      "skin_id": 699022,
+      "camp": 6
     },
     {
       "painting": "kuersike_2",
@@ -1680,6 +1694,13 @@
       "ship_group": 50301,
       "skin_id": 503011,
       "camp": 5
+    },
+    {
+      "painting": "sailimiye_2",
+      "name": "自投罗网的预言家？",
+      "ship_group": 960019,
+      "skin_id": 9600191,
+      "camp": 96
     },
     {
       "painting": "daofeng_4",

@@ -66,7 +66,7 @@
 ## 项目结构
 
 ```
-scripts/              # 提取脚本：pull_bundles.js（资源拉取）、pull_lua.js（Lua 快照拉取）、extract.js + extract/（解包重组并烘焙交互配置与 fades.json）、gen_catalog.js（皮肤目录生成）；pull_cs.js / disasm.js 为逆向期 C# 语义核对（使用流程不需要）
+scripts/              # 提取脚本：update.js（目录一键更新）、pull_bundles.js（资源拉取）、pull_lua.js（Lua 快照拉取）、extract.js + extract/（解包重组并烘焙交互配置与 fades.json）、gen_catalog.js（皮肤目录生成）；pull_cs.js / disasm.js 为逆向期 C# 语义核对（使用流程不需要）
 tools/adb/            # Android 平台工具（Apache 2.0，NOTICE 随目录分发）
 tools/Il2CppDumper/   # 游戏 C# 程序集 dump 工具（MIT，逆向期参考，仅保留 x64 主程序与 config.json）
 models/               # 导出的标准 Cubism 模型（moc3 v4/v5），按 <角色>/<皮肤id> 两级目录组织（不入库）
@@ -120,7 +120,17 @@ npm run dev       # dev server 实时扫描 models/ 生成皮肤清单，新增�
 
 ### 皮肤目录维护
 
-`public/catalog.json`（显示名 → bundle 名映射，纯名字元数据）由 `scripts/gen_catalog.js` 从游戏 Lua 快照与设备侧 live2d 索引生成。目录只收录非和谐版本：`_hx` 后缀的 CN 审核和谐变体 bundle 不拉取不收录。游戏版本更新后重新生成并提交：
+`public/catalog.json`（显示名 → bundle 名映射，纯名字元数据）由 `scripts/gen_catalog.js` 从游戏 Lua 快照与设备侧 live2d 索引生成。目录只收录非和谐版本：`_hx` 后缀的 CN 审核和谐变体 bundle 不拉取不收录。
+
+游戏版本更新后一条命令完成重生成，末尾自动对比新旧目录、列出新增/移除的皮肤名：
+
+```bash
+npm run update    # 串 pull_lua --force → pull_bundles --index → gen_catalog，任一步失败即中止
+```
+
+需要指定代理时用 `npm run update -- --proxy http://127.0.0.1:端口` 或设 `HTTPS_PROXY` 环境变量（缺省自动探测本机常见代理端口）。注意目录收录的是设备侧已下载的 L2D bundle：游戏内未预览过的皮肤、以及 ani 类动态皮肤（会动但无交互）不会出现，属正常。
+
+单独重排目录也可以按步骤跑：
 
 ```bash
 node scripts/pull_bundles.js --index   # 刷新 .tmp/hashes-live2d.csv 等索引

@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "test": "node scripts/tests/run_all.mjs"
+    "test": "node scripts/tests/run_all.mjs",
+    "update": "node scripts/update.js"
   },
   "dependencies": {
     "@alexaltea/capstone-js": "^5.0.9",

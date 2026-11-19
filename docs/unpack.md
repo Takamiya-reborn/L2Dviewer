@@ -29,6 +29,21 @@ node scripts/pull_lua.js --server JP
 
 需要核对命中路由或控制层语义时，使用 `pull_cs.js` 拉 APK 并用 Il2CppDumper 生成 dump，再用 `disasm.js` 对指定方法做定点反汇编。它们用于解释行为，不参与标准模型文件的生成。
 
+### 1.4 皮肤目录一键更新
+
+游戏版本更新后的日常维护只需一条命令：
+
+```bash
+npm run update
+```
+
+它依次执行 `pull_lua.js --force`（重拉 Lua 快照）、`pull_bundles.js --index`（从设备刷新 live2d 索引）、`gen_catalog.js`（重排 `public/catalog.json`），任一步失败即中止，最后对比新旧目录打印版本号变化与新增/移除的皮肤。目录同时是查看器目录页的拉取白名单，新皮肤只有进了目录才能在页面上点击拉取。
+
+注意：
+
+- 索引反映的是设备 `files/AssetBundles/live2d/` 的实际内容：游戏内未触发下载的 L2D 皮肤不会出现；ani 类动态皮肤（会动但不能交互）不落此目录，两者均属正常，不是脚本漏了；
+- GitHub 直连不通时用 `npm run update -- --proxy http://127.0.0.1:端口` 或设置 `HTTPS_PROXY` 环境变量；缺省时会自动探测本机常见代理端口（7890/7892/7897）。
+
 ## 2. 解包 bundle
 
 ```bash

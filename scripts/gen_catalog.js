@@ -9,7 +9,7 @@
 //     node scripts/pull_bundles.js --index     # .tmp/hashes-live2d.csv、.tmp/version-live2d.txt
 //
 // 过滤判据是 painting 与设备侧 live2d 索引精确全等（skin_type 语义混杂不承担判别）。
-// 游戏版本更新后重跑本脚本并提交新 catalog.json。
+// 游戏版本更新后通常经 scripts/update.js（npm run update）一键重跑全链路；单独重排目录时直接跑本脚本。
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'

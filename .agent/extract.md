@@ -22,13 +22,17 @@
 - 模板有、快照缺的机器条目：warn 后按已有条目降级烘焙，缺键过滤不落 null 条目。
 - `mainui_shift` 烘焙自 sharecfg/ship_skin_newmainui_shift.lua（主页 mellow 主题 per-skin 容器位移表，皮肤未收录落 null）；`painting` 一并烘焙，供取景侧半身像名单匹配（lua.js `readMainuiShift()`）。
 
-## 皮肤目录（gen_catalog.js）
+## 皮肤目录（gen_catalog.js / update.js）
 
+- 一键更新：`npm run update`（scripts/update.js）串 `pull_lua.js --force` → `pull_bundles.js --index` → `gen_catalog.js`，末尾 diff 报版本变化与新增/移除皮肤；任一步失败即中止。代理取值优先级：`--proxy` 显式值 > `HTTPS_PROXY` 环境 > 本机端口探测（7890/7892/7897）。
 - 判据：`painting ∈ hashes`，**大小写不敏感**（模板 painting 可含大写如 Z46_2；lua.js `readTemplateByPainting()`）。
 - 阵营取 `ship_group`：扫 statistics 的 nationality 字段；模板 id 尾数不可靠（qiye_9 教训）。值域：1-9 / 11 郁金 / 96 风暴 / 97 META / 其余归其他（models.js `CAMP_LABELS`）。
 - `{namecode:N}` 占位由 name_code.lua 代换。
 - `_hx` 和谐变体整层剔除，查看器一律非和谐；目录提交时纯名字条目豁免审核。
+- 索引/目录错位陷阱：UI 拉取（api.js `/api/extract` → pull_bundles）无条件顺带刷新设备索引但不刷目录——catalog 落后于 .tmp 索引不是 gen_catalog 的 bug，重跑 update.js 平账。目录同时是 UI 执行白名单（api.js `/api/extract` 校验 painting ∈ catalog），新皮肤必须先进目录才可在 UI 拉取。
+- 「新增」语义 = 设备侧新出现的 L2D bundle：游戏内未触发下载的皮肤不进目录，属正常；ani 类动态皮肤（非交互）落别的资源类别、不进 live2d 索引，判据天然排除（例：新奥尔良 103122 深夜的亲密触诊）。
 - scripts/dev/api.js 有接口白名单与单任务槽约束，新增接口先过白名单。
+- Lua 快照（社区明文仓库）是 UTF-8；GBK 约束只适用于 bundle 内文本，搜索模板前先确认编码。
 
 ## 硬边界
 
