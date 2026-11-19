@@ -3,15 +3,21 @@
  * 读取 ctx.model / ctx.app / ctx.l2dOffset / ctx.fill()，把拖拽标定系数写入 ctx.dragScale（手势与 HUD 消费）。
  */
 
-// 母港 UI 设计分辨率高度（pt）；相机固定 ⇒ 决定可见画布高
-const LIVE2D_UI_HEIGHT = 750
+// 母港 UI 设计分辨率宽（pt）；CanvasScaler 按宽适配（1334pt 恒铺满屏幕宽，高度随宽高比伸缩），
+// 相机固定 ⇒ 可见画布宽恒定、高随视口宽高比变化
+// 依据：mainlive2dpainting.lua 的半身像皮肤轮询屏幕尺寸重算 GetHalfBodyOffsetY（rect.height 随屏幕变），
+// 按"高恒 750pt"适配时 rect.height 恒定无需重算——只有按宽适配才需要
+const LIVE2D_UI_WIDTH = 1334
 // live2dpainting.lua 的默认根缩放（live2d_offset 无第 4 元素时）
 const LIVE2D_ROOT_SCALE = 52
-// 游戏端拖拽标定分辨率（竖屏 backbuffer 高，1080×1920 机型）：ship_l2d 的 offset_x/y 以 Input.mousePosition 的屏幕像素计。
-// 游戏里 3037 画布 px 铺满手机整屏，查看器里同一块画布铺满视口，窗口比手机矮时同样的手指位移对应的参数量就变少。
-// 拖拽量按 H_ref/视口内画布高 放大成"游戏屏幕像素"再喂机器。
-// localStorage 的 l2d_dragRefHeight 可覆盖标定值（对照游戏实机校准用）。
-const DRAG_REF_HEIGHT = Number(localStorage.getItem('l2d_dragRefHeight')) || 1920
+// 主页 mellow 主题表外皮肤的 L2D 容器位移 x（MainPaintingView.MESH_POSITION_X_OFFSET）
+const MELLOW_FALLBACK_SHIFT_X = 145
+// 半身像老皮肤名单（MainPaintingShift.IsLimitYPos）：容器 y 恒为半身公式，不吃主题位移 y
+const HALF_BODY_PAINTINGS = new Set(['biaoqiang', 'z23', 'lafei', 'lingbo', 'mingshi', 'xuefeng'])
+// 游戏端拖拽标定分辨率（1080×1920 机型横屏宽 1920px）：ship_l2d 的 offset_x/y 以 Input.mousePosition 的屏幕像素计。
+// 按宽适配下屏幕像素/pt = 设备宽/1334，与设备宽高比无关；拖拽量按 W_ref/视口宽 放大成"游戏屏幕像素"再喂机器。
+// localStorage 的 l2d_dragRefHeight 可覆盖标定值（历史键名，对照游戏实机校准用）。
+const DRAG_REF_WIDTH = Number(localStorage.getItem('l2d_dragRefHeight')) || 1920
 
 /**
  * @param ctx 舞台上下文（见 L2dStage.vue）
@@ -34,19 +40,32 @@ export function createCamera(ctx) {
     if (l2dOffset && internal.coreModel?.getModel?.().canvasinfo) {
       const info = internal.coreModel.getModel().canvasinfo
       const rootScale = l2dOffset[3] ?? LIVE2D_ROOT_SCALE
-      // 游戏里模型根节点 = 画布原点（canvasinfo 的 CanvasOrigin，通常画布中心）、根缩放恒 52（Unity 端 canvas px→单位是 1/PPU，故模型点 k（单位制）出现在世界 offset + k·52 处，offset 即 live2d_offset，y 向上）、相机固定不动
-      // 等价到查看器（本地 px，y 向下，= pixi 端 getDrawableVertices 的换算）：视口中心对应模型点 k = −offset/52，即 center = (W/2 − off.x·PPU/52, H/2 + off.y·PPU/52)
-      // 可见画布高 = 母港设计高 750pt ÷ (52/PPU) ≈ 3037px，全皮肤恒定（相机固定 ⇒ 取景比例与皮肤无关；750 是设计分辨率高度）
-      // props.fill 仍作整体缩放系数（默认 1 = 与游戏一致）
+      // 主页取景的容器位移（mellow 主题，NewMainScene 默认）：painting 根节点 _tf 按 meshImageShift 移动、
+      // l2dContainer 再按 l2dShift 移动，模型根（画布原点）在容器内再叠加 live2d_offset。三层合计：
+      // shift 表皮肤 = l2d_shift − (145, 10)；表外皮肤 = (0, −10)（meshImage −145 与 l2dShift +145 抵消）。
+      // l2d_shift[4] 的容器缩放在游戏 AdjustPosition 里未消费，不实现。半身像老皮肤（IsLimitYPos 名单）
+      // 容器 y 被半身公式覆盖：−rect.height/2 + 325·容器缩放（缩放恒 1），rect.height = 屏幕高 pt = 1334·视口高/宽
+      let shiftX = 0
+      let shiftY = -10
+      if (ctx.mainuiShift) {
+        shiftX = ctx.mainuiShift.l2d_shift[0] - MELLOW_FALLBACK_SHIFT_X
+        shiftY = ctx.mainuiShift.l2d_shift[1] - 10
+      }
+      if (ctx.painting && HALF_BODY_PAINTINGS.has(ctx.painting.replace(/_\d+$/, ''))) {
+        shiftY = -10 - (LIVE2D_UI_WIDTH * viewH / viewW) / 2 + 325
+      }
+      // 游戏里模型根节点 = 画布原点（canvasinfo 的 CanvasOrigin，通常画布中心），世界位置 = 容器位移 + live2d_offset（pt，y 向上），
+      // 根缩放 = live2d_offset[4]（默认 52）；相机固定 ⇒ 可见画布宽恒 1334pt、高 = 1334·视口高/宽
+      // 等价到查看器（本地 px，y 向下）：视口中心对应模型点 (W/2 − (off.x+shift.x)·pp, H/2 + (off.y+shift.y)·pp)
       const pxPerPt = info.PixelsPerUnit / rootScale // 视口 pt -> 模型本地 px
-      const scale = (viewH / (LIVE2D_UI_HEIGHT * pxPerPt)) * ctx.fill()
+      const scale = (viewW / (LIVE2D_UI_WIDTH * pxPerPt)) * ctx.fill()
       model.scale.set(scale)
-      // 游戏里同一块可见画布（≈3037 本地 px）铺满 H_ref backbuffer px
-      ctx.dragScale = DRAG_REF_HEIGHT / (viewH * ctx.fill())
+      // 游戏里同一块可见画布宽铺满 W_ref backbuffer px
+      ctx.dragScale = DRAG_REF_WIDTH / (viewW * ctx.fill())
       // 画布原点在本地 (W/2, H/2)——与 pixi 端 getDrawableVertices 的换算同源（它硬编码 W/2、H/2，不读 canvasinfo 的 CanvasOrigin），勿混用
       model.position.set(
-        viewW / 2 - (internal.width / 2 - l2dOffset[0] * pxPerPt) * scale,
-        viewH / 2 - (internal.height / 2 + l2dOffset[1] * pxPerPt) * scale,
+        viewW / 2 - (internal.width / 2 - (l2dOffset[0] + shiftX) * pxPerPt) * scale,
+        viewH / 2 - (internal.height / 2 + (l2dOffset[1] + shiftY) * pxPerPt) * scale,
       )
       return
     }

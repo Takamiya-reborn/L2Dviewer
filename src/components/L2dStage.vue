@@ -80,6 +80,8 @@ const ctx = {
   runtime: null,
   orch: null,
   l2dOffset: null,
+  mainuiShift: null,
+  painting: null,
   hintsCtl: null,
   actions: null,
   camera: null,

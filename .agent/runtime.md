@@ -21,6 +21,14 @@
 - 视线按住才跟随、松手回正：gestures.js `followGaze()` / `resetGaze()`；张臂姿态只在按住拖拽期间成立，不要改回不回零。
 - 库默认的 CubismBreath 是引擎私货，游戏 C# 无 Breath 层，mount.js `mountModelInner()` 已整层移除，勿加回。
 
+## 取景（主页 L2D 三层链）
+
+- 游戏取景 = Live2DPainting（live2d_offset[1..3] 位移、[4] 根缩放默认 52）+ 主页容器两级位移 + CanvasScaler 按宽适配；camera.js `fitModel()` 游戏路径实现全链，无 l2d.json 的皮肤退回 ROI 拟合。
+- 容器位移（mellow 主题，NewMainScene 默认，mainpaintingview.lua `AdjustPosition` 两级叠加）：painting 根 _tf 按 meshImageShift、l2dContainer 按 l2dShift。三层合计：ship_skin_newmainui_shift 表皮肤 = l2d_shift − (145, 10)；表外 = (0, −10)。l2d_shift[4] 的容器缩放游戏 AdjustPosition 未消费，不实现。
+- 半身像名单皮肤（biaoqiang/z23/lafei/lingbo/mingshi/xuefeng，MainPaintingShift.IsLimitYPos）：容器 y 被半身公式覆盖，合计 y = −10 − 屏幕pt高/2 + 325，屏幕pt高 = 1334·视口高/宽（随宽高比变，游戏 AddScreenChangeTimer 轮询重算同语义）。
+- 屏幕适配 = CanvasScaler 按宽：可见画布宽恒 1334pt、高随视口宽高比伸缩；16:9 与按高模式重合，故 16:9 下校准过的取景不受影响。证据：半身像皮肤按屏幕尺寸重算 rect.height（按高适配下 rect.height 恒定无需重算）。
+- 拖拽标定按宽：dragScale = 1920/(视口宽·fill)（offset_x/y 以游戏屏幕像素计；16:9 下与按高标定同值）。
+
 ## 门控与播放
 
 - canPlay 前置条件须 moc 默认值可满足：默认给不出的「起播=1」是姿态顺带值而非门控（ougen_8 基础反应全灭根因）。

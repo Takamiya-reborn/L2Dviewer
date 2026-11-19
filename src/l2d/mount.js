@@ -136,6 +136,8 @@ async function mountModelInner(ctx, url) {
   let entryMotion = null
   if (l2dConfig) {
     ctx.l2dOffset = l2dConfig.live2d_offset ?? null
+    ctx.mainuiShift = l2dConfig.mainui_shift ?? null
+    ctx.painting = l2dConfig.painting ?? null
     const orch = new DragOrchestrator(model, l2dConfig, ctx.actions.playLuaAction)
     ctx.orch = orch
     // 触发链关键步（拒按/点击判定/豁免/播放/名单）进控制台，供浏览器自测读链路

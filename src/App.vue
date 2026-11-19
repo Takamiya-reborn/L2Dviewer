@@ -68,7 +68,7 @@ function playTrigger(id) {
   <div class="layout">
     <!-- 舞台永远占满容器，两侧栏作为蒙板浮在上面 -->
     <L2dStage v-if="activeModel" ref="stageRef" class="stage" :key="activeModel.id" :model-url="activeModel.url"
-      :fill="0.8" @motions="triggers = $event" />
+      @motions="triggers = $event" />
     <SkinTab v-model="activeId" :tabs="tabs" title="皮肤列表" @pull-request="pullTarget = $event" />
     <StateTab :items="triggerItems" :active="activeTrigger" title="状态触发" @select="playTrigger" />
     <PullDialog :target="pullTarget" @close="pullTarget = null" @baked="onBaked" />

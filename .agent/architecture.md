@@ -11,7 +11,7 @@
 | 挂载总入口、复位缓动登记、Breath 移除、trackMotionStart 补账 | mount.js `mountModel()` / `mountModelInner()` |
 | 动作播放、动作变体切换、就地复位 | actions.js `createActions()` → `playMotion()` / `resetInteraction()` / `handleHitAreas()` |
 | 拖拽视线跟随与手势分发 | gestures.js `createGestures()` → `followGaze()` / `resetGaze()` / `machineZonesAt()` |
-| 相机取景与锚点 | camera.js `createCamera()` → `fitModel()` / `measureScene()` / `pickAnchorX()` |
+| 相机取景与锚点（游戏三层取景链 + 按宽适配，语义见 runtime.md 取景节） | camera.js `createCamera()` → `fitModel()` / `measureScene()` / `pickAnchorX()` |
 | 誓约戒指（Paramring 逐帧写） | ring.js `RING_PARAM` / `createOathRing()` |
 | 调色板 keyform 颜色动画 | palette.js `installPalette()`；渲染补丁 colorPatches.js `installColorPatch()` |
 | effect 组常驻氛围层（贝塞尔曲线采样叠加） | src/utils/ambient.js `loadAmbient()` / `sampleCurve()` |
@@ -42,7 +42,7 @@
 |---|---|
 | 提取/烘焙主脚本 | extract.js（用法见 docs/unpack.md） |
 | bundle 解包、哈希死绑定、层级构建 | scripts/extract/bundle.js `loadBundle()` / `resolveHashBindings()` / `buildHierarchy()` |
-| lua 模板解析与烘焙 | scripts/extract/lua.js `bakeL2d()` / `readAllSkinTemplates()` / `parseShipL2d()` / `idleIndex()` |
+| lua 模板解析与烘焙（offset/位移表与机器条目解耦等约定见 extract.md） | scripts/extract/lua.js `bakeL2d()` / `readAllSkinTemplates()` / `parseShipL2d()` / `readMainuiShift()` / `idleIndex()` |
 | moc3 参数节表 | scripts/extract/moc3.js `moc3ParamTables()` |
 | 动作转换（流式帧、常量段、边界状态、分组） | scripts/extract/motion.js `convertClip()` / `constantKeys()` / `denseKeys()` / `clipBoundaryState()` / `clipGroup()` |
 | physics Normalization 注入 | scripts/extract/physics.js `injectPhysicsNormalization()` |

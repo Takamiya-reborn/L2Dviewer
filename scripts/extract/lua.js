@@ -133,26 +133,33 @@ export function readAllSkinTemplates(text) {
     })
 }
 
-function parseShipL2d(text, skinId) {
+// 解析全部 ship_l2d 条目。键是 skinId 直接连缀序号，序号宽度不定（老皮肤 1 位如 4990521、
+// 新皮肤 2 位补零如 81801101），宽度启发式会漏配——模板 ship_l2d_id 已给出精确键，由调用方按 id 直查
+function parseShipL2d(text) {
     const matches = [...text.matchAll(LUA_ENTRY_RE)]
-    const entries = []
+    return matches.map((match, index) => ({ key: parseInt(match[1]), ...luaBlock(text, matches, index) }))
+}
+
+// 从 ship_skin_newmainui_shift.lua 读单皮肤的主页位移条目（skin_shift/l2d_shift/spine_shift）
+function readMainuiShift(path, skinId) {
+    const text = readFileSync(path, 'utf8')
+    const re = /^\tpg\.base\.ship_skin_newmainui_shift\[(\d+)\] = \{$/gm
+    const matches = [...text.matchAll(re)]
     for (let index = 0; index < matches.length; index++) {
-        const key = parseInt(matches[index][1])
-        if (Math.floor(key / 100) === skinId) {
-            entries.push({ key, ...luaBlock(text, matches, index) })
-        }
+        if (parseInt(matches[index][1]) === skinId) return luaBlock(text, matches, index)
     }
-    return entries
+    return null
 }
 
 // 从已落盘的 interaction.json 读 idle 变体索引：actionId=1 的状态按 subIndex 升序 -> clip 名
+// 老皮肤的基础状态没有 subIndex 字段，视作变体 0
 function idleIndex(modelDir, modelId) {
     const path = join(modelDir, `${modelId}.interaction.json`)
     if (!existsSync(path)) return {}
     const states = JSON.parse(readFileSync(path, 'utf8')).animator?.states ?? []
     const entries = states
         .filter((s) => s.actionId === 1 && s.clip)
-        .map((s) => [s.subIndex, s.clip])
+        .map((s) => [s.subIndex ?? 0, s.clip])
         .sort((a, b) => a[0] - b[0])
     return Object.fromEntries(entries)
 }
@@ -182,22 +189,33 @@ export function bakeL2d(root, modelDir, modelId, server, skinRef, log) {
         skinId = parseInt(template.id)
     }
 
-    const l2dIds = template.ship_l2d_id
-    if (!Array.isArray(l2dIds) || !l2dIds.length) {
-        log.warn(`皮肤 ${skinId}（${painting}）没有 ship_l2d_id，跳过 l2d.json`)
-        return false
-    }
-    const byKey = new Map(parseShipL2d(readFileSync(luaPath, 'utf8'), skinId).map((e) => [e.key, e]))
+    // live2d_offset 与机器条目解耦：老皮肤没有参数机也照常烘焙——游戏端对无 offset 皮肤按
+    // Live2DPainting 默认语义取景（根缩放 52 + 原点位移），缺了 offset 查看器只能退回 ROI 拟合
+    const l2dIds = Array.isArray(template.ship_l2d_id) ? template.ship_l2d_id : []
+    const byKey = l2dIds.length
+        ? new Map(parseShipL2d(readFileSync(luaPath, 'utf8')).map((e) => [e.key, e]))
+        : new Map()
     const missing = l2dIds.filter((key) => !byKey.has(key))
-    if (missing.length) throw new Error(`ship_l2d.lua 缺少条目: ${JSON.stringify(missing)}`)
+    if (missing.length) log.warn(`皮肤 ${skinId}（${painting}）ship_l2d.lua 缺少条目: ${JSON.stringify(missing)}，按已有条目烘焙`)
+    // 缺键条目落 null 会毒化机器循环，过滤掉（缺失已由上面的 warn 声明）
+    const found = l2dIds.map((key) => byKey.get(key)).filter((e) => e)
+
+    // 主页容器位移（mellow 主题 per-skin 表）：skin_shift 是背景画层、l2d_shift 是 L2D 容器层，
+    // 查看器取景消费 l2d − skin 的相对位移；快照缺这份文件时落 null（取景回退表外常量位移）
+    const shiftPath = join(luaRoot, 'sharecfg', 'ship_skin_newmainui_shift.lua')
+    const shiftEntry = existsSync(shiftPath)
+        ? readMainuiShift(shiftPath, skinId)
+        : null
 
     const product = {
         skin_id: skinId,
+        painting,
         name: template.name,
         ship_group: template.ship_group,
         live2d_offset: template.live2d_offset,
+        mainui_shift: shiftEntry,
         idle_index: idleIndex(modelDir, modelId),
-        entries: l2dIds.map((key) => byKey.get(key)),
+        entries: found,
     }
     const dest = join(modelDir, `${modelId}.l2d.json`)
     writeFileSync(dest, JSON.stringify(product, null, 2))

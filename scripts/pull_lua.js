@@ -13,7 +13,7 @@
 //     - 文件清单即 docs/azurlane.md 记录的子集，各服务器目录结构一致
 //         - 默认含控制层（view/ship/live2d*.lua、mgr/live2dmgr.lua）：交互语义的根修依据
 //         - 落点固定在 .tmp/lua/（无路径参数）；extract.js 从同一位置读取
-//     - 上游仓库停更不影响快照有效性，拉一次即可
+//     - 游戏版本更新后重拉快照（--force 覆盖本地），再重跑 extract.js 烘焙
 
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -35,6 +35,7 @@ const SERVERS = ["CN", "EN", "JP", "KR", "TW"];
 // 必需：extract.js 的直接输入 + gen_catalog.js 的名字代换表与阵营筛选数据（相对服务器目录）
 const REQUIRED = [
   "sharecfg/ship_l2d.lua",
+  "sharecfg/ship_skin_newmainui_shift.lua",
   "sharecfgdata/ship_skin_template.lua",
   "sharecfg/name_code.lua",
   "sharecfgdata/ship_data_statistics.lua",
