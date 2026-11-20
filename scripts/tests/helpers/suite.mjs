@@ -10,67 +10,79 @@
 
 /** 值格式化：JSON 截断，超 160 字符加省略号（undefined/函数 JSON 不出，特殊处理） */
 function fmt(v) {
-  let s
+  let s;
   try {
-    s = typeof v === 'function' ? String(v) : JSON.stringify(v) ?? String(v)
+    s = typeof v === "function" ? String(v) : (JSON.stringify(v) ?? String(v));
   } catch {
-    s = String(v)
+    s = String(v);
   }
-  return s.length > 160 ? `${s.slice(0, 160)}…` : s
+  return s.length > 160 ? `${s.slice(0, 160)}…` : s;
 }
 
 /** 深比较：数组逐项、平面对象逐键，其余走 Object.is */
 function deepEq(a, b) {
-  if (Object.is(a, b)) return true
+  if (Object.is(a, b)) return true;
   if (Array.isArray(a) && Array.isArray(b)) {
-    return a.length === b.length && a.every((x, i) => deepEq(x, b[i]))
+    return a.length === b.length && a.every((x, i) => deepEq(x, b[i]));
   }
-  if (a && b && typeof a === 'object' && typeof b === 'object') {
-    const ka = Object.keys(a)
-    const kb = Object.keys(b)
-    return ka.length === kb.length && ka.every((k) => deepEq(a[k], b[k]))
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const ka = Object.keys(a);
+    const kb = Object.keys(b);
+    return ka.length === kb.length && ka.every((k) => deepEq(a[k], b[k]));
   }
-  return false
+  return false;
 }
 
 export function suite(title) {
-  let pass = 0
-  let fail = 0
-  const failed = []
+  let pass = 0;
+  let fail = 0;
+  const failed = [];
 
   function check(name, cond, detail) {
-    console.log(cond ? `  ok  ${name}` : `FAIL  ${name}${detail ? `（${detail}）` : ''}`)
-    if (cond) pass++
+    console.log(
+      cond ? `  ok  ${name}` : `FAIL  ${name}${detail ? `（${detail}）` : ""}`,
+    );
+    if (cond) pass++;
     else {
-      fail++
-      failed.push(name)
+      fail++;
+      failed.push(name);
     }
   }
 
   return {
     check,
     eq(name, actual, expected) {
-      const ok = deepEq(actual, expected)
-      check(name, ok, ok ? undefined : `实际 ${fmt(actual)}，期望 ${fmt(expected)}`)
+      const ok = deepEq(actual, expected);
+      check(
+        name,
+        ok,
+        ok ? undefined : `实际 ${fmt(actual)}，期望 ${fmt(expected)}`,
+      );
     },
     near(name, actual, expected, eps = 1e-9) {
       const ok =
-        typeof actual === 'number' &&
-        typeof expected === 'number' &&
-        Math.abs(actual - expected) < eps
-      check(name, ok, ok ? undefined : `实际 ${fmt(actual)}，期望 ${fmt(expected)}（±${eps}）`)
+        typeof actual === "number" &&
+        typeof expected === "number" &&
+        Math.abs(actual - expected) < eps;
+      check(
+        name,
+        ok,
+        ok
+          ? undefined
+          : `实际 ${fmt(actual)}，期望 ${fmt(expected)}（±${eps}）`,
+      );
     },
     section(title2) {
-      console.log(`\n--- ${title2} ---`)
+      console.log(`\n--- ${title2} ---`);
     },
     finish() {
       console.log(
         fail
-          ? `\n${title}：${fail} 项失败 / ${pass} 项通过\n失败项：${failed.join('、')}`
+          ? `\n${title}：${fail} 项失败 / ${pass} 项通过\n失败项：${failed.join("、")}`
           : `\n${title}：全部通过（${pass} 项）`,
-      )
-      console.log(`SUMMARY pass=${pass} fail=${fail}`)
-      process.exit(fail ? 1 : 0)
+      );
+      console.log(`SUMMARY pass=${pass} fail=${fail}`);
+      process.exit(fail ? 1 : 0);
     },
-  }
+  };
 }

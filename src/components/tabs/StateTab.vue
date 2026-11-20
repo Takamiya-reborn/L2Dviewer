@@ -25,7 +25,8 @@ const collapsed = ref(true)
       <ScrollBar :inset="6">
         <ul class="list">
           <li v-for="item in items" :key="item.id">
-            <button class="card" :class="{ active: item.id === active }" type="button" @click="$emit('select', item.id)">
+            <button class="card" :class="{ active: item.id === active }" type="button"
+              @click="$emit('select', item.id)">
               <span class="label">{{ item.label ?? item.id }}</span>
               <span class="id">
                 <Play :size="14" />

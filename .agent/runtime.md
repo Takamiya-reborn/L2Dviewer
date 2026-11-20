@@ -35,6 +35,7 @@
 - C# 反应路径不收机器分区；touch_special 走 C# 反应路径。
 - 触发点选取：GetDragPart 名单序最大者胜，GetTouchPart 最小者胜；联动层 kind1 相对 / kind2 绝对（triggers.js `TRIGGER_HANDLERS`）。
 - "idle" 动作名恒放行、无引擎回落（actions.js `idleGroupIndex()`）；游戏无输入推进 idle 变体的机制尚未定位。
+- 状态触发面板的组白名单 = `AMBIENT_GROUPS`（只排 effect），不再排除 idle/touch_idle/touch_drag——触发开关不只驱动动作还驱动语音，无可播动作的组点击即 no-op（App.vue）。
 
 ## 引擎一致性
 
@@ -42,3 +43,6 @@
 
 - pixi v6 事件管线失效，涉及原生事件的监听均经替代通道实现（gestures.js / clickEffect.js 自持 pointer 监听）。
 - HUD 差分面板中，物理输出口与 effect 组的差分行是合法噪声，非缺陷信号（hud.js `motionDiffReadout()`）。
+- HUD 取景三轴（zoom/offX/offY）：hud.js `view` 组 set(patch) 写 ctx.userView 并触发 camera.js `fitModel()` 重适配，L2D 与 spine 通用（spine 经 `ctx._spineFit` 转发）；zoom 乘适配系数、offX/offY 按视口宽高比例平移。
+- HUD 差分采样钩子挂在 Live2D internalModel 上，spine 皮肤整段跳过（hud.js）。
+- gestures.js 对 spine 的旁路：followGaze/resetGaze 走可选链，onPointerUp 命中段无 internalModel 直接 return——Ani 类无网格命中层，松手交互到此为止。

@@ -15,6 +15,7 @@ const DEFAULT_OPEN = {
   hints: false,
   palette: true,
   scale: true,
+  view: true,
   inject: false,
 }
 
@@ -41,7 +42,7 @@ watch(open, (v) => {
 
 <script setup>
 import { ref } from 'vue'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight, RotateCcw } from 'lucide-vue-next'
 
 // 强播下拉选中值（跨分组开合保持）
 const playSel = ref('')
@@ -150,13 +151,16 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
     <button v-if="!hideDev" class="hint-toggle" type="button" :class="{ on: showDebug }" @click="emit('toggle-debug')">
       调试信息
     </button>
-    <button v-if="!hideDev" class="hint-toggle" type="button" :class="{ on: showInject }" @click="emit('toggle-inject')">
+    <button v-if="!hideDev" class="hint-toggle" type="button" :class="{ on: showInject }"
+      @click="emit('toggle-inject')">
       注入
     </button>
-    <button v-if="!hideDev" class="hint-toggle" type="button" :class="{ on: showRipple }" @click="emit('toggle-ripple')">
+    <button v-if="!hideDev" class="hint-toggle" type="button" :class="{ on: showRipple }"
+      @click="emit('toggle-ripple')">
       触点涟漪
     </button>
-    <button v-if="!hideDev" class="hint-toggle" type="button" :class="{ on: lockFrame }" @click="emit('toggle-lockframe')">
+    <button v-if="!hideDev" class="hint-toggle" type="button" :class="{ on: lockFrame }"
+      @click="emit('toggle-lockframe')">
       锁帧 60
     </button>
     <button class="hint-toggle" type="button" @click="emit('toggle-hidedev')">
@@ -175,11 +179,46 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
   </div>
 
   <div v-if="!hideDev && (showDebug || showInject) && hud" class="debug-stack">
-    <!-- 注入面板：独立开关，调试面板收起时仍可用 -->
-    <div v-if="showInject && hud.override" class="debug-panel">
+    <!-- 注入面板：独立开关，调试面板收起时仍可用。取景三轴对 spine 皮肤也可用
+         （spine 无参数层，hud.override 为 null，面板外壳不按它 gating） -->
+    <div v-if="showInject" class="debug-panel">
+      <!-- 取景三轴（L2D/spine 通用）：整体缩放乘在相机适配系数上，两轴偏移按视口宽/高比例平移，
+           set 即走 camera.fitModel 重适配 -->
+      <div v-if="hud.view" class="group open-last" :class="{ open: open.view }">
+        <div class="inject-head">
+          <button class="group-head" type="button" @click="toggleGroup('view')">
+            <ChevronRight class="tri" :class="{ open: open.view }" :size="12" />取景
+            <span v-if="!open.view" class="dim">缩放/偏移</span>
+          </button>
+          <button class="icon-btn" type="button" title="复位取景三轴"
+            @click="hud.view.set({ zoom: 1, offX: 0, offY: 0 })">
+            <RotateCcw :size="12" />
+          </button>
+        </div>
+        <div class="group-body">
+          <div class="inject-item">
+            <span class="debug-pair">整体缩放</span>
+            <input class="inject-range" type="range" min="0.2" max="3" step="0.01" :value="hud.view.zoom"
+              @input="hud.view.set({ zoom: +$event.target.value })">
+            <span class="debug-pair">×{{ hud.view.zoom.toFixed(2) }}</span>
+          </div>
+          <div class="inject-item">
+            <span class="debug-pair">横向偏移</span>
+            <input class="inject-range" type="range" min="-0.5" max="0.5" step="0.005" :value="hud.view.offX"
+              @input="hud.view.set({ offX: +$event.target.value })">
+            <span class="debug-pair">{{ (hud.view.offX * 100).toFixed(1) }}%</span>
+          </div>
+          <div class="inject-item">
+            <span class="debug-pair">纵向偏移</span>
+            <input class="inject-range" type="range" min="-0.5" max="0.5" step="0.005" :value="hud.view.offY"
+              @input="hud.view.set({ offY: +$event.target.value })">
+            <span class="debug-pair">{{ (hud.view.offY * 100).toFixed(1) }}%</span>
+          </div>
+        </div>
+      </div>
       <!-- 注入：参数覆盖层（beforeModelUpdate 钉值，赢过动作/物理/机器/视线全部层）。
            注意 moc3 v5 分支吸附：参数值变一次，绑定网格可能永久切入另一关键形态分支，复位不解吸 -->
-      <div class="group open-last" :class="{ open: open.inject }">
+      <div v-if="hud.override" class="group open-last" :class="{ open: open.inject }">
         <div class="inject-head">
           <button class="group-head" type="button" @click="toggleGroup('inject')">
             <ChevronRight class="tri" :class="{ open: open.inject }" :size="12" />注入
@@ -191,11 +230,12 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
         <div class="group-body">
           <div v-for="e in hud.override.list" :key="'i' + e.id" class="inject-item">
             <span class="debug-pair" :class="{ dim: !e.on }">{{ e.id }}</span>
-            <input class="inject-range" type="range" :min="e.min ?? 0" :max="e.max ?? 1" :step="0.01"
-              :value="e.value" :disabled="!e.on" @input="hud.override.set(e.id, +$event.target.value)">
+            <input class="inject-range" type="range" :min="e.min ?? 0" :max="e.max ?? 1" :step="0.01" :value="e.value"
+              :disabled="!e.on" @input="hud.override.set(e.id, +$event.target.value)">
             <span class="debug-pair" :class="{ warn: e.missing }">{{ e.missing ? '无此参数' : e.value.toFixed(2) }}</span>
             <span v-if="!e.missing" class="debug-pair dim">实{{ e.live.toFixed(2) }}</span>
-            <input class="inject-check" type="checkbox" :checked="e.on" @change="hud.override.toggle(e.id, $event.target.checked)">
+            <input class="inject-check" type="checkbox" :checked="e.on"
+              @change="hud.override.toggle(e.id, $event.target.checked)">
             <span class="debug-pair clickable" title="移除覆盖" @click="hud.override.remove(e.id)">×</span>
           </div>
           <!-- 备选清单：模型真实存在的参数，按去尾数字的正则分组、组内网格平铺，点格注入省去手敲 ID。
@@ -217,210 +257,210 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
       </div>
     </div>
     <div v-if="showDebug" class="debug-panel">
-    <!-- 首行常显：FPS 实时读数（0.5s 窗口计数），不随分组折叠 -->
-    <span class="debug-pair">{{ fps }} FPS</span>
-    <!-- 动作：挂起动作 / idle循环 / fallback 路由 -->
-    <div v-if="hud.motion" class="group" :class="{ open: open.motion }">
-      <button class="group-head" type="button" @click="toggleGroup('motion')">
-        <ChevronRight class="tri" :class="{ open: open.motion }" :size="12" />动作
-        <span v-if="!open.motion" class="dim">{{ hud.motion.name ?? '（无挂起）' }}</span>
-      </button>
-      <div class="group-body">
-        <span class="debug-pair">{{ hud.motion.name ?? '（无挂起）' }}</span>
-        <span v-if="hud.motion.idle" class="debug-pair dim">idle循环</span>
-        <span v-if="hud.motion.fallback" class="debug-pair dim">
-          {{ hud.motion.fallback.source }}:{{ hud.motion.fallback.clip }}[{{ hud.motion.fallback.index }}]<template
-            v-if="hud.motion.fallback.degraded">退化</template>
-        </span>
-        <!-- 强播（诊断）：任意变体/特殊动作直接起播，用于跨变体姿态对照 -->
-        <div v-if="hud.play" class="debug-row">
-          <select v-model="playSel" class="debug-select">
-            <option value="" disabled>选动作</option>
-            <option v-for="c in hud.play.clips" :key="c" :value="c">{{ c }}</option>
-          </select>
-          <button class="hint-toggle" type="button" @click="playSel && hud.play.run(playSel)">强播</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 差分：在播动作曲线应值 vs 模型实值（参数被哪一层压低在此现形；混合期权重<1 时偏差属预期） -->
-    <div v-if="hud.motionDiff" class="group" :class="{ open: open.diff }">
-      <button class="group-head" type="button" @click="toggleGroup('diff')">
-        <ChevronRight class="tri" :class="{ open: open.diff }" :size="12" />差分
-        <span v-if="!open.diff" class="dim">
-          {{ hud.motionDiff.count ? hud.motionDiff.count + ' 条' : '吻合' }}
-        </span>
-      </button>
-      <div class="group-body">
-        <span class="debug-pair dim">
-          {{ hud.motionDiff.clip }} t={{ hud.motionDiff.t.toFixed(2) }}/{{ hud.motionDiff.duration.toFixed(2) }}s
-          权重{{ hud.motionDiff.weight.toFixed(2) }}
-        </span>
-        <span v-for="r in hud.motionDiff.rows" :key="r.id" class="debug-pair">
-          {{ r.id }} {{ r.want.toFixed(1) }}→{{ r.got.toFixed(1) }}
-        </span>
-        <span v-if="!hud.motionDiff.count" class="debug-pair dim">全部吻合</span>
-      </div>
-    </div>
-
-    <!-- 状态：状态分区参数 + 摆位残留，按注入清单的分组网格平铺；
-         分区亮着才有排查价值（暖色值），残留必离默认值（恒暖色），收起时头部留残留计数 -->
-    <div v-if="hud.zones.length || hud.carried.length" class="group" :class="{ open: open.state }">
-      <div class="inject-head">
-        <button class="group-head" type="button" @click="toggleGroup('state')">
-          <ChevronRight class="tri" :class="{ open: open.state }" :size="12" />状态
-          <span v-if="!open.state" class="dim">{{ hud.carried.length }} 残留</span>
+      <!-- 首行常显：FPS 实时读数（0.5s 窗口计数），不随分组折叠 -->
+      <span class="debug-pair">{{ fps }} FPS</span>
+      <!-- 动作：挂起动作 / idle循环 / fallback 路由 -->
+      <div v-if="hud.motion" class="group" :class="{ open: open.motion }">
+        <button class="group-head" type="button" @click="toggleGroup('motion')">
+          <ChevronRight class="tri" :class="{ open: open.motion }" :size="12" />动作
+          <span v-if="!open.motion" class="dim">{{ hud.motion.name ?? '（无挂起）' }}</span>
         </button>
-        <label class="debug-pair inject-only"><input v-model="onlyLit" type="checkbox">只看亮着</label>
-        <span class="debug-pair dim">{{ litZones(hud).length }}/{{ hud.zones.length }}</span>
-      </div>
-      <div class="group-body">
-        <div class="param-list">
-          <template v-for="g in groupedPairs(onlyLit ? litZones(hud) : hud.zones)" :key="'sz' + g.name">
-            <span class="param-group-head">{{ g.name }} ×{{ g.items.length }}</span>
-            <div class="param-grid">
-              <span v-for="p in g.items" :key="'sp' + p.id" class="param-cell"
-                :class="{ off: Math.abs(p.value) > 1e-4 }">
-                <span class="cell-id">{{ p.id }}</span><span class="cell-val">{{ p.value.toFixed(2) }}</span>
-              </span>
-            </div>
-          </template>
-          <template v-if="hud.carried.length">
-            <span class="param-group-head">残留 ×{{ hud.carried.length }}</span>
-            <div class="param-grid">
-              <span v-for="([id, value], i) in hud.carried" :key="'sc' + i" class="param-cell off">
-                <span class="cell-id">{{ id }}</span><span class="cell-val">{{ value.toFixed(2) }}</span>
-              </span>
-            </div>
-          </template>
-        </div>
-      </div>
-    </div>
-
-    <template v-if="hud.machine">
-      <!-- 机器：idle 变体 / 白名单 / 落账 / 按压锁 / 播放中滞留（收起时头部仍保 Warn） -->
-      <div class="group" :class="{ open: open.machine }">
-        <button class="group-head" type="button" @click="toggleGroup('machine')">
-          <ChevronRight class="tri" :class="{ open: open.machine }" :size="12" />机器
-          <span v-if="!open.machine" class="dim">idle={{ hud.machine.idle }}</span>
-          <span v-if="!open.machine && hud.machine.playing" class="warn">
-            播放中:{{ hud.machine.playName }}
+        <div class="group-body">
+          <span class="debug-pair">{{ hud.motion.name ?? '（无挂起）' }}</span>
+          <span v-if="hud.motion.idle" class="debug-pair dim">idle循环</span>
+          <span v-if="hud.motion.fallback" class="debug-pair dim">
+            {{ hud.motion.fallback.source }}:{{ hud.motion.fallback.clip }}[{{ hud.motion.fallback.index }}]<template
+              v-if="hud.motion.fallback.degraded">退化</template>
           </span>
-        </button>
-        <div class="group-body">
-          <span class="debug-pair">idle={{ hud.machine.idle }}</span>
-          <span class="debug-pair">白名单={{ hud.machine.whitelist }}<template v-if="hud.machine.wlIdle">(t{{
-            hud.machine.wlIdle }})</template></span>
-          <span v-if="hud.machine.actor" class="debug-pair">落账=#{{ String(hud.machine.actor).slice(-2) }}</span>
-          <span v-if="hud.machine.able" class="debug-pair">按压锁</span>
-          <span v-if="hud.machine.active" class="debug-pair">按住:{{ hud.machine.active }}</span>
-          <!-- 播放中滞留是"交互一次就锁死"的头号嫌疑：反应动作播完仍显示即中招 -->
-          <span v-if="hud.machine.playing" class="debug-pair warn">
-            播放中:{{ hud.machine.playName }}
-          </span>
-        </div>
-      </div>
-
-      <!-- 触发链：最近调度日志 -->
-      <div v-if="hud.machine.tap?.length" class="group" :class="{ open: open.tap }">
-        <button class="group-head" type="button" @click="toggleGroup('tap')">
-          <ChevronRight class="tri" :class="{ open: open.tap }" :size="12" />触发链
-          <span v-if="!open.tap" class="dim">{{ hud.machine.tap.length }} 条</span>
-        </button>
-        <div class="group-body">
-          <span v-for="(e, i) in hud.machine.tap" :key="'t' + i" class="debug-pair dim">
-            {{ e.t.toFixed(1) }} {{ e.line }}
-          </span>
-        </div>
-      </div>
-
-      <!-- 参数：各机器参数实时值 -->
-      <div v-if="hud.machine.machines.length" class="group" :class="{ open: open.params }">
-        <button class="group-head" type="button" @click="toggleGroup('params')">
-          <ChevronRight class="tri" :class="{ open: open.params }" :size="12" />参数
-          <span v-if="!open.params" class="dim">{{ hud.machine.machines.length }} 项</span>
-        </button>
-        <div class="group-body">
-          <span v-for="([k, v], i) in hud.machine.machines" :key="'m' + i" class="debug-pair">{{ k }}={{ v }}</span>
-        </div>
-      </div>
-
-      <!-- 联动：relation 参数实时值 -->
-      <div v-if="hud.machine.relations.length" class="group" :class="{ open: open.relations }">
-        <button class="group-head" type="button" @click="toggleGroup('relations')">
-          <ChevronRight class="tri" :class="{ open: open.relations }" :size="12" />联动
-          <span v-if="!open.relations" class="dim">{{ hud.machine.relations.length }} 项</span>
-        </button>
-        <div class="group-body">
-          <span v-for="([k, v], i) in hud.machine.relations" :key="'r' + i" class="debug-pair">{{ k }}={{ v }}</span>
-        </div>
-      </div>
-
-      <!-- 判定：type 11 区间机的门刻度条 -->
-      <div v-if="hud.machine.gates.length" class="group" :class="{ open: open.gates }">
-        <button class="group-head" type="button" @click="toggleGroup('gates')">
-          <ChevronRight class="tri" :class="{ open: open.gates }" :size="12" />判定
-          <span v-if="!open.gates" class="dim">{{ hud.machine.gates.length }} 门</span>
-        </button>
-        <div class="group-body gates-body">
-          <div v-for="g in hud.machine.gates" :key="'g' + g.zone + g.param" class="gate">
-            <span class="gate-head">{{ g.zone }} {{ g.param }}={{ fmtValue(g.value) }}（{{ ringText(g, hud.rings)
-              }}）</span>
-            <span class="gate-track">
-              <span v-for="(b, i) in g.bands" :key="i" class="gate-band"
-                :class="{ hit: g.value >= b.lo && g.value < b.hi }"
-                :style="{ left: spanPct(g, b.lo) + '%', width: spanPct(g, b.hi) - spanPct(g, b.lo) + '%' }">
-                {{ b.action }}
-              </span>
-            </span>
+          <!-- 强播（诊断）：任意变体/特殊动作直接起播，用于跨变体姿态对照 -->
+          <div v-if="hud.play" class="debug-row">
+            <select v-model="playSel" class="debug-select">
+              <option value="" disabled>选动作</option>
+              <option v-for="c in hud.play.clips" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <button class="hint-toggle" type="button" @click="playSel && hud.play.run(playSel)">强播</button>
           </div>
         </div>
       </div>
-    </template>
 
-    <!-- 交互点：提示层逐分区读数（点 / 框无点 + 原因 / 被挡 / 出画 / 网格隐藏），bad = 入画却没点/被挡，门控排查重点 -->
-    <div v-if="hud.dots?.length" class="group" :class="{ open: open.hints }">
-      <button class="group-head" type="button" @click="toggleGroup('hints')">
-        <ChevronRight class="tri" :class="{ open: open.hints }" :size="12" />交互点
-        <span v-if="!open.hints" class="dim">
-          {{ hud.dots.filter((d) => d.status === '点' || d.status === '点:质心').length }}点<template
-            v-if="hud.dots.some((d) => d.bad)">·{{ hud.dots.filter((d) => d.bad).length }}异常</template>
-        </span>
-      </button>
-      <div class="group-body">
-        <span v-for="(d, i) in hud.dots" :key="'d' + i" class="debug-pair"
-          :class="{ warn: d.bad, dim: !d.bad && (d.status === '网格隐藏' || d.status === '挡:出画' || d.status === '无点:出画') }">
-          {{ d.name }}:{{ d.status }}
-        </span>
+      <!-- 差分：在播动作曲线应值 vs 模型实值（参数被哪一层压低在此现形；混合期权重<1 时偏差属预期） -->
+      <div v-if="hud.motionDiff" class="group" :class="{ open: open.diff }">
+        <button class="group-head" type="button" @click="toggleGroup('diff')">
+          <ChevronRight class="tri" :class="{ open: open.diff }" :size="12" />差分
+          <span v-if="!open.diff" class="dim">
+            {{ hud.motionDiff.count ? hud.motionDiff.count + ' 条' : '吻合' }}
+          </span>
+        </button>
+        <div class="group-body">
+          <span class="debug-pair dim">
+            {{ hud.motionDiff.clip }} t={{ hud.motionDiff.t.toFixed(2) }}/{{ hud.motionDiff.duration.toFixed(2) }}s
+            权重{{ hud.motionDiff.weight.toFixed(2) }}
+          </span>
+          <span v-for="r in hud.motionDiff.rows" :key="r.id" class="debug-pair">
+            {{ r.id }} {{ r.want.toFixed(1) }}→{{ r.got.toFixed(1) }}
+          </span>
+          <span v-if="!hud.motionDiff.count" class="debug-pair dim">全部吻合</span>
+        </div>
       </div>
-    </div>
 
-    <!-- 调色板：面板开合（BANZI）+ 色轴实时值，可点击循环/复位 -->
-    <div v-if="hud.palette" class="group" :class="{ open: open.palette }">
-      <button class="group-head" type="button" @click="toggleGroup('palette')">
-        <ChevronRight class="tri" :class="{ open: open.palette }" :size="12" />调色板
-        <span v-if="!open.palette" class="dim">{{ hud.palette.axes.length }} 轴</span>
-      </button>
-      <div class="group-body">
-        <span v-if="hud.palette.open" class="debug-pair dim">面板开</span>
-        <span v-for="([id, v], i) in hud.palette.axes" :key="'p' + i" class="debug-pair clickable"
-          title="点击循环 0 → 1 → -1" @click="hud.palette.cycle(id)">
-          {{ id }}={{ v }}
-        </span>
-        <span class="debug-pair dim clickable" title="全部色轴归零（默认方案）" @click="hud.palette.reset()">复位</span>
+      <!-- 状态：状态分区参数 + 摆位残留，按注入清单的分组网格平铺；
+         分区亮着才有排查价值（暖色值），残留必离默认值（恒暖色），收起时头部留残留计数 -->
+      <div v-if="hud.zones.length || hud.carried.length" class="group" :class="{ open: open.state }">
+        <div class="inject-head">
+          <button class="group-head" type="button" @click="toggleGroup('state')">
+            <ChevronRight class="tri" :class="{ open: open.state }" :size="12" />状态
+            <span v-if="!open.state" class="dim">{{ hud.carried.length }} 残留</span>
+          </button>
+          <label class="debug-pair inject-only"><input v-model="onlyLit" type="checkbox">只看亮着</label>
+          <span class="debug-pair dim">{{ litZones(hud).length }}/{{ hud.zones.length }}</span>
+        </div>
+        <div class="group-body">
+          <div class="param-list">
+            <template v-for="g in groupedPairs(onlyLit ? litZones(hud) : hud.zones)" :key="'sz' + g.name">
+              <span class="param-group-head">{{ g.name }} ×{{ g.items.length }}</span>
+              <div class="param-grid">
+                <span v-for="p in g.items" :key="'sp' + p.id" class="param-cell"
+                  :class="{ off: Math.abs(p.value) > 1e-4 }">
+                  <span class="cell-id">{{ p.id }}</span><span class="cell-val">{{ p.value.toFixed(2) }}</span>
+                </span>
+              </div>
+            </template>
+            <template v-if="hud.carried.length">
+              <span class="param-group-head">残留 ×{{ hud.carried.length }}</span>
+              <div class="param-grid">
+                <span v-for="([id, value], i) in hud.carried" :key="'sc' + i" class="param-cell off">
+                  <span class="cell-id">{{ id }}</span><span class="cell-val">{{ value.toFixed(2) }}</span>
+                </span>
+              </div>
+            </template>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <!-- 标定：全局缩放 -->
-    <div class="group" :class="{ open: open.scale }">
-      <button class="group-head" type="button" @click="toggleGroup('scale')">
-        <ChevronRight class="tri" :class="{ open: open.scale }" :size="12" />标定
-        <span v-if="!open.scale" class="dim">×{{ hud.scale.toFixed(2) }}</span>
-      </button>
-      <div class="group-body">
-        <span class="debug-pair">×{{ hud.scale.toFixed(2) }}</span>
+      <template v-if="hud.machine">
+        <!-- 机器：idle 变体 / 白名单 / 落账 / 按压锁 / 播放中滞留（收起时头部仍保 Warn） -->
+        <div class="group" :class="{ open: open.machine }">
+          <button class="group-head" type="button" @click="toggleGroup('machine')">
+            <ChevronRight class="tri" :class="{ open: open.machine }" :size="12" />机器
+            <span v-if="!open.machine" class="dim">idle={{ hud.machine.idle }}</span>
+            <span v-if="!open.machine && hud.machine.playing" class="warn">
+              播放中:{{ hud.machine.playName }}
+            </span>
+          </button>
+          <div class="group-body">
+            <span class="debug-pair">idle={{ hud.machine.idle }}</span>
+            <span class="debug-pair">白名单={{ hud.machine.whitelist }}<template v-if="hud.machine.wlIdle">(t{{
+              hud.machine.wlIdle }})</template></span>
+            <span v-if="hud.machine.actor" class="debug-pair">落账=#{{ String(hud.machine.actor).slice(-2) }}</span>
+            <span v-if="hud.machine.able" class="debug-pair">按压锁</span>
+            <span v-if="hud.machine.active" class="debug-pair">按住:{{ hud.machine.active }}</span>
+            <!-- 播放中滞留是"交互一次就锁死"的头号嫌疑：反应动作播完仍显示即中招 -->
+            <span v-if="hud.machine.playing" class="debug-pair warn">
+              播放中:{{ hud.machine.playName }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 触发链：最近调度日志 -->
+        <div v-if="hud.machine.tap?.length" class="group" :class="{ open: open.tap }">
+          <button class="group-head" type="button" @click="toggleGroup('tap')">
+            <ChevronRight class="tri" :class="{ open: open.tap }" :size="12" />触发链
+            <span v-if="!open.tap" class="dim">{{ hud.machine.tap.length }} 条</span>
+          </button>
+          <div class="group-body">
+            <span v-for="(e, i) in hud.machine.tap" :key="'t' + i" class="debug-pair dim">
+              {{ e.t.toFixed(1) }} {{ e.line }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 参数：各机器参数实时值 -->
+        <div v-if="hud.machine.machines.length" class="group" :class="{ open: open.params }">
+          <button class="group-head" type="button" @click="toggleGroup('params')">
+            <ChevronRight class="tri" :class="{ open: open.params }" :size="12" />参数
+            <span v-if="!open.params" class="dim">{{ hud.machine.machines.length }} 项</span>
+          </button>
+          <div class="group-body">
+            <span v-for="([k, v], i) in hud.machine.machines" :key="'m' + i" class="debug-pair">{{ k }}={{ v }}</span>
+          </div>
+        </div>
+
+        <!-- 联动：relation 参数实时值 -->
+        <div v-if="hud.machine.relations.length" class="group" :class="{ open: open.relations }">
+          <button class="group-head" type="button" @click="toggleGroup('relations')">
+            <ChevronRight class="tri" :class="{ open: open.relations }" :size="12" />联动
+            <span v-if="!open.relations" class="dim">{{ hud.machine.relations.length }} 项</span>
+          </button>
+          <div class="group-body">
+            <span v-for="([k, v], i) in hud.machine.relations" :key="'r' + i" class="debug-pair">{{ k }}={{ v }}</span>
+          </div>
+        </div>
+
+        <!-- 判定：type 11 区间机的门刻度条 -->
+        <div v-if="hud.machine.gates.length" class="group" :class="{ open: open.gates }">
+          <button class="group-head" type="button" @click="toggleGroup('gates')">
+            <ChevronRight class="tri" :class="{ open: open.gates }" :size="12" />判定
+            <span v-if="!open.gates" class="dim">{{ hud.machine.gates.length }} 门</span>
+          </button>
+          <div class="group-body gates-body">
+            <div v-for="g in hud.machine.gates" :key="'g' + g.zone + g.param" class="gate">
+              <span class="gate-head">{{ g.zone }} {{ g.param }}={{ fmtValue(g.value) }}（{{ ringText(g, hud.rings)
+                }}）</span>
+              <span class="gate-track">
+                <span v-for="(b, i) in g.bands" :key="i" class="gate-band"
+                  :class="{ hit: g.value >= b.lo && g.value < b.hi }"
+                  :style="{ left: spanPct(g, b.lo) + '%', width: spanPct(g, b.hi) - spanPct(g, b.lo) + '%' }">
+                  {{ b.action }}
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 交互点：提示层逐分区读数（点 / 框无点 + 原因 / 被挡 / 出画 / 网格隐藏），bad = 入画却没点/被挡，门控排查重点 -->
+      <div v-if="hud.dots?.length" class="group" :class="{ open: open.hints }">
+        <button class="group-head" type="button" @click="toggleGroup('hints')">
+          <ChevronRight class="tri" :class="{ open: open.hints }" :size="12" />交互点
+          <span v-if="!open.hints" class="dim">
+            {{hud.dots.filter((d) => d.status === '点' || d.status === '点:质心').length}}点<template
+              v-if="hud.dots.some((d) => d.bad)">·{{hud.dots.filter((d) => d.bad).length}}异常</template>
+          </span>
+        </button>
+        <div class="group-body">
+          <span v-for="(d, i) in hud.dots" :key="'d' + i" class="debug-pair"
+            :class="{ warn: d.bad, dim: !d.bad && (d.status === '网格隐藏' || d.status === '挡:出画' || d.status === '无点:出画') }">
+            {{ d.name }}:{{ d.status }}
+          </span>
+        </div>
       </div>
-    </div>
+
+      <!-- 调色板：面板开合（BANZI）+ 色轴实时值，可点击循环/复位 -->
+      <div v-if="hud.palette" class="group" :class="{ open: open.palette }">
+        <button class="group-head" type="button" @click="toggleGroup('palette')">
+          <ChevronRight class="tri" :class="{ open: open.palette }" :size="12" />调色板
+          <span v-if="!open.palette" class="dim">{{ hud.palette.axes.length }} 轴</span>
+        </button>
+        <div class="group-body">
+          <span v-if="hud.palette.open" class="debug-pair dim">面板开</span>
+          <span v-for="([id, v], i) in hud.palette.axes" :key="'p' + i" class="debug-pair clickable"
+            title="点击循环 0 → 1 → -1" @click="hud.palette.cycle(id)">
+            {{ id }}={{ v }}
+          </span>
+          <span class="debug-pair dim clickable" title="全部色轴归零（默认方案）" @click="hud.palette.reset()">复位</span>
+        </div>
+      </div>
+
+      <!-- 标定：全局缩放 -->
+      <div class="group" :class="{ open: open.scale }">
+        <button class="group-head" type="button" @click="toggleGroup('scale')">
+          <ChevronRight class="tri" :class="{ open: open.scale }" :size="12" />标定
+          <span v-if="!open.scale" class="dim">×{{ hud.scale.toFixed(2) }}</span>
+        </button>
+        <div class="group-body">
+          <span class="debug-pair">×{{ hud.scale.toFixed(2) }}</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -480,7 +520,7 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
   pointer-events: none;
 }
 
-.debug-stack > .debug-panel {
+.debug-stack>.debug-panel {
   max-width: 100%;
   pointer-events: auto;
 }
@@ -629,6 +669,26 @@ const emit = defineEmits(['toggle-hints', 'toggle-debug', 'toggle-ripple', 'togg
 .debug-pair.warn,
 .warn {
   color: #e8b06f;
+}
+
+/* 组头小图标按钮（复位等）：面板穿透、按钮自身接管 */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0.75;
+}
+
+.icon-btn:hover {
+  opacity: 1;
 }
 
 /* 注入组：参数行（滑杆 + 值 + 开关 + 移除），面板本体穿透、行内控件显式接管 */

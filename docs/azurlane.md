@@ -27,13 +27,17 @@
 
 ```text
 files/
-├── AssetBundles/live2d/       # 每套皮肤一个 UnityFS bundle
-├── hashes-live2d.csv          # bundle 索引和哈希
+├── AssetBundles/live2d/       # 每套 L2D 皮肤一个 UnityFS bundle
+├── AssetBundles/spinepainting/ # ani 动态皮肤：主 bundle + <painting>_res 骨架资源对
+├── hashes.csv                 # 全类别 bundle 索引和哈希
+├── hashes-live2d.csv          # live2d 类别索引和哈希
 ├── version-live2d.txt         # Live2D 资源版本
 └── ...
 ```
 
 皮肤标识通常是 `<舰娘拼音>_<皮肤序号>`。索引中另存在 `_hx` 后缀的 bundle，是 CN 审核用的和谐变体（客户端在和谐模式下经 HXSet 自动改拉），本仓库不收录：拉取器与皮肤目录均默认跳过，一律使用非和谐版本。`hashes-live2d.csv` 只负责定位和校验，模型、Animator、AnimationClip、纹理和自定义 MonoBehaviour 都位于对应 bundle。
+
+ani 类动态皮肤不是 Cubism 而是 spine 骨架动画（spine 3.8）：`spinepainting/<painting>` 主 bundle 只含 SkeletonGraphic UI 预制体，骨架与贴图在伴生 `<painting>_res` bundle（SkeletonDataAsset、SpineAtlasAsset、.skel、.atlas、Texture2D）。预制体有两种组装：单 SkeletonGraphic，或根 GameObject 子层级按序挂多个 SkeletonGraphic 共享坐标系（分层合成，如人物多层分别出骨）。皮肤语义同 spine-unity 的 initialSkinName——空串不设皮肤，人物部件普遍存放在非 default 的命名皮肤里（如常规/誓约两套着装）。这类皮肤无 Animator 交互层，纯观看；提取与浏览器还原见 [unpack.md](unpack.md) 3.4 节。
 
 一个皮肤在逻辑上由三组数据组成：
 

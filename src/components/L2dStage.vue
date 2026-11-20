@@ -86,6 +86,9 @@ const ctx = {
   actions: null,
   camera: null,
   oathRing: null,
+  // 取景微调（HUD 注入面板三轴，L2D 与 spine 都吃）：zoom 乘在相机适配系数上，
+  // offX/offY 是视口宽/高比例的平移量；camera.fitModel 消费，set 后重适配
+  userView: { zoom: 1, offX: 0, offY: 0 },
   dragScale: 1,
   lastGesture: 'tap',
   status,
@@ -203,19 +206,19 @@ onBeforeUnmount(() => {
 
 watch(() => props.modelUrl, (url) => url && mountModel(ctx, url))
 
-/** 供外部（状态触发面板）直接播放指定动作组 */
-defineExpose({ play: (group) => ctx.actions.playMotion(group) })
+/** 供外部（状态触发面板）直接播放指定动作组；spine 皮肤无动作组，group 即骨架变体名，走变体切换 */
+defineExpose({ play: (group) => (ctx._spinePlay ? ctx._spinePlay(group) : ctx.actions.playMotion(group)) })
 </script>
 
 <template>
   <div class="stage">
     <div ref="canvasHost" class="canvas-host" />
-    <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :show-inject="showInject" :show-ripple="showRipple"
-      :show-ring="showRing" :lock-frame="lockFrame" :hide-dev="hideDev" :fps="fps" @toggle-hints="showHints = !showHints"
-      @toggle-debug="showDebug = !showDebug" @toggle-inject="showInject = !showInject"
-      @toggle-ripple="showRipple = !showRipple" @toggle-ring="showRing = !showRing"
-      @toggle-lockframe="lockFrame = !lockFrame" @toggle-hidedev="hideDev = !hideDev"
-      @reset="actions.resetInteraction()" />
+    <HudPanel :hud="hud" :show-hints="showHints" :show-debug="showDebug" :show-inject="showInject"
+      :show-ripple="showRipple" :show-ring="showRing" :lock-frame="lockFrame" :hide-dev="hideDev" :fps="fps"
+      @toggle-hints="showHints = !showHints" @toggle-debug="showDebug = !showDebug"
+      @toggle-inject="showInject = !showInject" @toggle-ripple="showRipple = !showRipple"
+      @toggle-ring="showRing = !showRing" @toggle-lockframe="lockFrame = !lockFrame"
+      @toggle-hidedev="hideDev = !hideDev" @reset="actions.resetInteraction()" />
     <p v-if="status" class="status">{{ status }}</p>
   </div>
 </template>

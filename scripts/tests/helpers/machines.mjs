@@ -5,17 +5,17 @@
 
 /** { [entries.id]: machine } 映射；重复 id 直接抛（配置错误早暴露） */
 export function machinesById(orch) {
-  const byId = {}
+  const byId = {};
   for (const m of orch.machines) {
-    if (m.id in byId) throw new Error(`machine id=${m.id} 重复`)
-    byId[m.id] = m
+    if (m.id in byId) throw new Error(`machine id=${m.id} 重复`);
+    byId[m.id] = m;
   }
-  return byId
+  return byId;
 }
 
 /** 单台机器，缺失直接 throw（比拿到 undefined 更早暴露） */
 export function machineById(orch, id) {
-  const m = orch.machines.find((x) => x.id === id)
-  if (!m) throw new Error(`machine id=${id} 不存在（entries 里没配？）`)
-  return m
+  const m = orch.machines.find((x) => x.id === id);
+  if (!m) throw new Error(`machine id=${id} 不存在（entries 里没配？）`);
+  return m;
 }

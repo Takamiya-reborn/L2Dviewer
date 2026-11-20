@@ -14,10 +14,12 @@ node scripts/tests/run_all.mjs [名字子串...] [--fail-fast|-f]
 scripts/tests/
 ├── run_all.mjs                # 入口：串行跑 unit/ 与 asset/ 下全部 test_*.mjs（unit 先跑），子串过滤 + --fail-fast
 ├── unit/                      # 合成配置驱动的纯逻辑测试（不依赖 models/）
+│   ├── test_catalog.mjs       # 皮肤目录生成：判据/阵营/合并条目 altPaintings/ani 形态标记
 │   ├── test_dragmachine.mjs   # 拖拽参数机控制层：状态机 + 联动层 listener_data + 触发类型 1/5/10/11/12
 │   ├── test_interaction.mjs   # 交互有向图状态机（需 public/libs 的 Cubism Core，仅 import）
 │   ├── test_render.mjs        # 渲染参数层三件：palette 落笔豁免 / ambient effect 曲线采样 / 曲线目标序归一
-│   └── test_ladder_loop.mjs   # 梯子两圈环回链路回归（合成配置 + 真机器）
+│   ├── test_ladder_loop.mjs   # 梯子两圈环回链路回归（合成配置 + 真机器）
+│   └── test_spine_skel.mjs    # spine .skel 二进制解析回归：合成字节流复刻游戏 SkeletonBinary 语法（含加权 mesh/clipping/旧名修补）
 ├── asset/                     # 依赖真实模型资产的回归测试（缺资产整支跳过而非失败）
 │   ├── test_models.mjs        # models/ 全皮肤 moc3 资产体检
 │   └── test_trace.mjs         # 逐帧 trace 确定性回归（真实资产）

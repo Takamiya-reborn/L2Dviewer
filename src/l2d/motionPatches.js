@@ -1,161 +1,185 @@
 /** pixi-live2d-display 动作库补丁（安装一次，幂等）：动作交叉渐变恢复、尊重 Meta.Loop、idle 确定性选支。补丁运行时读 activeCtx.fades / activeCtx.orch / activeCtx.runtime——每次舞台挂载调用 installMotionPatches(ctx) 更新 activeCtx（L2dStage 被 App.vue 按 :key 逐皮肤整体重挂，补丁单例必须跟随当前活动舞台，见 activeCtx 注释）。 */
-import { Ticker } from 'pixi.js'
-import { Cubism4InternalModel, Cubism4MotionManager, CubismModel, Live2DModel, config } from 'pixi-live2d-display/cubism4'
+import { Ticker } from "pixi.js";
+import {
+  Cubism4InternalModel,
+  Cubism4MotionManager,
+  CubismModel,
+  Live2DModel,
+  config,
+} from "pixi-live2d-display/cubism4";
 
-let installed = false
+let installed = false;
 
 // 内核求值循环按曲线类型顺序遍历（Model→Parameter→PartOpacity 三段各一个循环，遇类型切换即停），
 // 曲线数组里目标混排时其后所有同型曲线整体失去求值（官方 motion3 约定按目标分组排序，extract.js 已保证（按目标分组排序落盘））
-const TARGET_ORDER = { Model: 0, Parameter: 1, PartOpacity: 2 }
+const TARGET_ORDER = { Model: 0, Parameter: 1, PartOpacity: 2 };
 
 /**
  * 曲线数组按目标秩归一排序（稳定排序，同目标内相对次序不变）；已是分组序时原样返回不动数据。
  * Meta.Curves 镜像同步指向同一数组，保持文件内两份曲线表一致。
  */
 export function normalizeCurveTargetOrder(data) {
-  const curves = data?.Curves
-  if (!curves?.length) return data
-  let lastRank = -1
+  const curves = data?.Curves;
+  if (!curves?.length) return data;
+  let lastRank = -1;
   for (const curve of curves) {
-    const rank = TARGET_ORDER[curve.Target] ?? TARGET_ORDER.Parameter
+    const rank = TARGET_ORDER[curve.Target] ?? TARGET_ORDER.Parameter;
     if (rank < lastRank) {
-      const sorted = [...curves].sort((a, b) => (TARGET_ORDER[a.Target] ?? TARGET_ORDER.Parameter) - (TARGET_ORDER[b.Target] ?? TARGET_ORDER.Parameter))
-      data.Curves = sorted
-      if (Array.isArray(data.Meta?.Curves)) data.Meta.Curves = sorted
-      break
+      const sorted = [...curves].sort(
+        (a, b) =>
+          (TARGET_ORDER[a.Target] ?? TARGET_ORDER.Parameter) -
+          (TARGET_ORDER[b.Target] ?? TARGET_ORDER.Parameter),
+      );
+      data.Curves = sorted;
+      if (Array.isArray(data.Meta?.Curves)) data.Meta.Curves = sorted;
+      break;
     }
-    lastRank = rank
+    lastRank = rank;
   }
-  return data
+  return data;
 }
 // 当前活动舞台上下文：App.vue 对 L2dStage 用 :key 逐皮肤整体重挂（每次切皮肤都是全新挂载），每次重挂都是**新 ctx**——而本模块的补丁是原型级单例（installed 幂等，只装一次），闭包里不能捕获首个 ctx，必须经 activeCtx 跟随当前活动舞台，否则皮肤切换后回落读的是死挂载的 ctx.orch（idleIndex 停在旧会话）
-let activeCtx = null
+let activeCtx = null;
 
 /**
  * @param ctx 舞台上下文（见 L2dStage.vue）：orch/runtime 在模型挂载时回填。
  *            每次舞台挂载调用一次：首次安装补丁，其后仅更新 activeCtx
  */
 export function installMotionPatches(ctx) {
-  activeCtx = ctx
-  if (installed) return
-  installed = true
+  activeCtx = ctx;
+  if (installed) return;
+  installed = true;
 
-  Live2DModel.registerTicker(Ticker)
+  Live2DModel.registerTicker(Ticker);
 
   /**
    * 动作交叉渐变（时序链：queueManager.startMotion 对旧动作 setFadeOut，新动作按 fadeIn 权重从旧姿态混合进去——权重走 getEasingSine 阻尼曲线）。
    * 碧蓝航线的 motion3.json 全部没有声明 FadeInTime/FadeOutTime，Cubism 内核此时缺省 1s，故渐变时长不能走内核缺省：游戏端 Unity Animator 每条 AnyState 转场自带过渡时长（extract.js 的 animatorFades 提取为 <skin>.fades.json：系统/触摸老条目 0.5s、新条目与 _ex 变体 0.25s、login/home/change_* 0s 硬切），createMotion 补丁按 clip 名查表逐动作设置，表缺 clip 时退回下方 config 的 300ms。
    * 若开关参数在渐变期出现穿模（半透明道具/错位缩放），用逐曲线 fade 定点硬切（motion.setParameterFadeInTime(pid, 0)，内核语义：该曲线权重恒 1 随新动作瞬时切换），不要整体归零——0..1 参数里有呼吸/眨眼/脸颊这类必须渐变的，按范围判定会误伤。
    */
-  config.motionFadingDuration = 300
-  config.idleMotionFadingDuration = 300
+  config.motionFadingDuration = 300;
+  config.idleMotionFadingDuration = 300;
 
   /**
    * 尊重 motion3.json 的 Meta.Loop：本库 CubismMotion.parse 不读取该字段（只暴露 setLoop setter），循环声明被忽略后 idle/login 播完一遍会随机重启另一支 idle、且重启瞬间两套姿态混合；改为循环后同支 idle 无缝衔接，行为与游戏内一致。
    * setIsLoopFadeIn(false) 一并关掉循环回卷点的重淡入（内核在 timeOffset 到达 duration 回卷时会重置 fadeInStartTime，不关的话每循环一圈都对底值做一次 300ms 渐变混合，idle 呈周期性姿态回正再弹回）；起播那次 fade-in 不受影响（isStarted 分支无条件 setFadeInStartTime），交叉渐变照常生效。
    */
-  const createMotion = Cubism4MotionManager.prototype.createMotion
-  Cubism4MotionManager.prototype.createMotion = function (data, group, definition) {
-    const motion = createMotion.call(this, normalizeCurveTargetOrder(data), group, definition)
+  const createMotion = Cubism4MotionManager.prototype.createMotion;
+  Cubism4MotionManager.prototype.createMotion = function (
+    data,
+    group,
+    definition,
+  ) {
+    const motion = createMotion.call(
+      this,
+      normalizeCurveTargetOrder(data),
+      group,
+      definition,
+    );
     if (data?.Meta?.Loop) {
-      motion.setIsLoop(true)
-      motion.setIsLoopFadeIn(false)
+      motion.setIsLoop(true);
+      motion.setIsLoopFadeIn(false);
     }
     // 逐 clip 转场时长（见上方渐变注释）。fadeOut 归零：出场由下一支动作的 fadeIn 承担（游戏转场语义同此——旧状态保持满权重直到新状态渐入），库对旧动作本来就是硬杀，fadeOut 只会在自然收尾时侵蚀最后一段姿态
-    const fades = activeCtx.fades
+    const fades = activeCtx.fades;
     if (fades) {
-      const clip = (definition?.File ?? '')
-        .split('/')
+      const clip = (definition?.File ?? "")
+        .split("/")
         .pop()
-        ?.replace(/\.motion3\.json$/, '')
-      const duration = fades.transitions?.[clip] ?? fades.default
+        ?.replace(/\.motion3\.json$/, "");
+      const duration = fades.transitions?.[clip] ?? fades.default;
       if (duration != null) {
-        motion.setFadeInTime(duration)
-        motion.setFadeOutTime(0)
+        motion.setFadeInTime(duration);
+        motion.setFadeOutTime(0);
       }
     }
     // 入口硬切标记（mount.js 设置）：控制器默认态入口无转场时长，首支动作满权重起播；仅对标记的 clip 生效一次
     if (activeCtx._entryHardCutClip) {
-      const clip = (definition?.File ?? '')
-        .split('/')
+      const clip = (definition?.File ?? "")
+        .split("/")
         .pop()
-        ?.replace(/\.motion3\.json$/, '')
+        ?.replace(/\.motion3\.json$/, "");
       if (clip === activeCtx._entryHardCutClip) {
-        motion.setFadeInTime(0)
-        activeCtx._entryHardCutClip = null
+        motion.setFadeInTime(0);
+        activeCtx._entryHardCutClip = null;
       }
     }
-    return motion
-  }
+    return motion;
+  };
 
   /**
    * idle 确定性选支：库内的空闲回退走 startRandomMotion，用 Math.random 从组里随机挑一支。idle 循环播放（见 createMotion 补丁）后，随机只发生在回落瞬间——触发动作播完后随机换一支 idle 变体，其姿态假定与状态机遗留的开关参数（摊开的菜单、手持道具等）冲突，模型会跳进一个与当前状态不符的动作。
    * 游戏内触发反应结束后回到基础待机，状态参数靠跨动作保留维持（菜单保持摊开直到收尾分支），这里同样确定性回落：idle 组恒取"文件名与组同名"的那支（idle.motion3.json，无则第 0 支）；其余组（触发面板的随机播放）仍走库内随机。
    * 分支挂起（节点非中性）期间不回落 idle：游戏在 OnFinishAnim(0) 进入等待输入后保持最后一帧姿态，摊开的菜单等维持原状，直到分支由后续手势收尾；若照库内默认立刻重启 idle，motionStart 的复位会把非状态参数清回默认，姿态当场回正、摊开的菜单消失。节点回到中性（收尾分支播完）后这里重新放行 idle。
    */
-  const startRandomMotion = Cubism4MotionManager.prototype.startRandomMotion
-  Cubism4MotionManager.prototype.startRandomMotion = function (group, priority) {
+  const startRandomMotion = Cubism4MotionManager.prototype.startRandomMotion;
+  Cubism4MotionManager.prototype.startRandomMotion = function (
+    group,
+    priority,
+  ) {
     if (group === this.groups.idle) {
       // 有拖拽参数机时，idle 变体号由机器触发链维护（游戏 changeIdleIndex：Animator SetInteger("idle")），回落恒取当前变体；节点非中性（菜单摊开等状态残留）正是变体姿态的前提，不再拦截
       if (activeCtx.orch) {
-        const defs = this.definitions[group] ?? []
-        const clip = activeCtx.orch.idleClipFor(activeCtx.orch.idleIndex)
+        const defs = this.definitions[group] ?? [];
+        const clip = activeCtx.orch.idleClipFor(activeCtx.orch.idleIndex);
         const base = defs.findIndex(
-          (d) => (d.File ?? '').split('/').pop() === `${clip}.motion3.json`,
-        )
+          (d) => (d.File ?? "").split("/").pop() === `${clip}.motion3.json`,
+        );
         // 回落选支读数：变体号/解析出的 clip/组内下标；负数（文件名没对上）会 Math.max 退化到下标 0（基础 idle）
-        const index = Math.max(base, 0)
+        const index = Math.max(base, 0);
         // 读数进 HUD（ctx.idleFallback，hud.js 汇编）：路径上的机器排查不依赖 console
         activeCtx.idleFallback = {
-          source: 'engine',
+          source: "engine",
           clip,
           index,
           variant: activeCtx.orch.idleIndex,
           degraded: base < 0,
           at: Date.now(),
-        }
+        };
         console.log(
-          `[l2d:idle] 回落→${clip} 下标${index}${base < 0 ? '（文件名未命中,退化基础idle）' : ''}`,
-        )
-        const playing = this.startMotion(group, index, priority)
+          `[l2d:idle] 回落→${clip} 下标${index}${base < 0 ? "（文件名未命中,退化基础idle）" : ""}`,
+        );
+        const playing = this.startMotion(group, index, priority);
         Promise.resolve(playing).then((ok) => {
-          if (!ok) console.warn('[l2d:idle] 回落被引擎拒绝:', clip, '下标', index)
-        })
-        return playing
+          if (!ok)
+            console.warn("[l2d:idle] 回落被引擎拒绝:", clip, "下标", index);
+        });
+        return playing;
       }
-      if (activeCtx.runtime && !activeCtx.runtime.isNeutral()) return Promise.resolve(false)
-      const defs = this.definitions[group] ?? []
+      if (activeCtx.runtime && !activeCtx.runtime.isNeutral())
+        return Promise.resolve(false);
+      const defs = this.definitions[group] ?? [];
       const base = defs.findIndex(
-        (d) => (d.File ?? '').split('/').pop() === `${group}.motion3.json`,
-      )
+        (d) => (d.File ?? "").split("/").pop() === `${group}.motion3.json`,
+      );
       // ctx.orch 缺失分支的读数：按组名文件反查（idle.motion3.json 在 fulici_2 组内下标 4），供动作行显示实际回落到的这支
       activeCtx.idleFallback = {
-        source: 'engine-noorch',
+        source: "engine-noorch",
         clip: group,
         index: Math.max(base, 0),
         variant: null,
         degraded: base < 0,
         at: Date.now(),
-      }
-      return this.startMotion(group, Math.max(base, 0), priority)
+      };
+      return this.startMotion(group, Math.max(base, 0), priority);
     }
-    return startRandomMotion.call(this, group, priority)
-  }
+    return startRandomMotion.call(this, group, priority);
+  };
 
   /**
    * 视线层对齐游戏本体 CubismLookController（bundle 实测每模型的 Sources/Destinations：EyeBallX/Y Factor 1、AngleX/Y Factor 30、BodyAngleX/Y Factor 10，只有 X/Y 两轴源）。
    * 库内默认多写 AngleZ += x·y·(−30)——游戏无 Z 轴源，该分量是纯新增：头部侧倾类动作（如 zhenzhuhao_2 idle5 恒持 AngleZ=20）的肩颈形变按动作里的 AngleZ 键控，叠加鼠标位移会把形变链推出键控范围；库还缺 BodyAngleY += 10·y 一路，一并补齐。模型缺某参数时核心层 addParameterValueById 按无操作处理。
    */
   Cubism4InternalModel.prototype.updateFocus = function () {
-    const x = this.focusController.x
-    const y = this.focusController.y
-    this.coreModel.addParameterValueById(this.idParamEyeBallX, x)
-    this.coreModel.addParameterValueById(this.idParamEyeBallY, y)
-    this.coreModel.addParameterValueById(this.idParamAngleX, 30 * x)
-    this.coreModel.addParameterValueById(this.idParamAngleY, 30 * y)
-    this.coreModel.addParameterValueById('ParamBodyAngleY', 10 * y)
-    this.coreModel.addParameterValueById(this.idParamBodyAngleX, 10 * x)
-  }
+    const x = this.focusController.x;
+    const y = this.focusController.y;
+    this.coreModel.addParameterValueById(this.idParamEyeBallX, x);
+    this.coreModel.addParameterValueById(this.idParamEyeBallY, y);
+    this.coreModel.addParameterValueById(this.idParamAngleX, 30 * x);
+    this.coreModel.addParameterValueById(this.idParamAngleY, 30 * y);
+    this.coreModel.addParameterValueById("ParamBodyAngleY", 10 * y);
+    this.coreModel.addParameterValueById(this.idParamBodyAngleX, 10 * x);
+  };
 
   /**
    * 参数落笔去钳位（游戏本体语义）：框架的 CubismModel.setParameterValueByIndex 写值前把值钳进 moc3 量程，
@@ -164,17 +188,45 @@ export function installMotionPatches(ctx) {
    * "钳到 30"相差 15px，后者即"小臂变形"；原值直写与游戏画面吻合（HUD 注入 -4/-17 对照确认，两者差 0.6px）。
    * 原型级补丁覆盖三个写入口，保留 weight 混合与不存在参数的旁路语义。
    */
-  CubismModel.prototype.setParameterValueByIndex = function (parameterIndex, value, weight = 1) {
+  CubismModel.prototype.setParameterValueByIndex = function (
+    parameterIndex,
+    value,
+    weight = 1,
+  ) {
     if (parameterIndex in this._notExistParameterValues) {
-      this._notExistParameterValues[parameterIndex] = weight == 1 ? value : this._notExistParameterValues[parameterIndex] * (1 - weight) + value * weight
-      return
+      this._notExistParameterValues[parameterIndex] =
+        weight == 1
+          ? value
+          : this._notExistParameterValues[parameterIndex] * (1 - weight) +
+            value * weight;
+      return;
     }
-    this._parameterValues[parameterIndex] = weight == 1 ? value : this._parameterValues[parameterIndex] * (1 - weight) + value * weight
-  }
-  CubismModel.prototype.addParameterValueByIndex = function (parameterIndex, value, weight = 1) {
-    this.setParameterValueByIndex(parameterIndex, this.getParameterValueByIndex(parameterIndex) + value * weight, 1)
-  }
-  CubismModel.prototype.multiplyParameterValueByIndex = function (parameterIndex, value, weight = 1) {
-    this.setParameterValueByIndex(parameterIndex, this.getParameterValueByIndex(parameterIndex) * (1 + (value - 1) * weight), 1)
-  }
+    this._parameterValues[parameterIndex] =
+      weight == 1
+        ? value
+        : this._parameterValues[parameterIndex] * (1 - weight) + value * weight;
+  };
+  CubismModel.prototype.addParameterValueByIndex = function (
+    parameterIndex,
+    value,
+    weight = 1,
+  ) {
+    this.setParameterValueByIndex(
+      parameterIndex,
+      this.getParameterValueByIndex(parameterIndex) + value * weight,
+      1,
+    );
+  };
+  CubismModel.prototype.multiplyParameterValueByIndex = function (
+    parameterIndex,
+    value,
+    weight = 1,
+  ) {
+    this.setParameterValueByIndex(
+      parameterIndex,
+      this.getParameterValueByIndex(parameterIndex) *
+        (1 + (value - 1) * weight),
+      1,
+    );
+  };
 }

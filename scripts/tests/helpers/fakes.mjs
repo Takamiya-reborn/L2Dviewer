@@ -8,12 +8,12 @@
  * 各测试文件统一用这份。
  */
 export function stubLocalStorage() {
-  const store = new Map()
+  const store = new Map();
   globalThis.localStorage = {
     getItem: (k) => store.get(k) ?? null,
     setItem: (k, v) => store.set(k, String(v)),
-  }
-  return store
+  };
+  return store;
 }
 
 /**
@@ -22,8 +22,8 @@ export function stubLocalStorage() {
  * @param opts.opacities drawable 不透明度表（给定时附加 getDrawableOpacity，InteractionRuntime.firstVisibleHit 的可见性过滤用）
  */
 export function makeCoreModel(params = {}, { opacities = null } = {}) {
-  const ids = Object.keys(params)
-  const values = ids.map((id) => params[id].value ?? params[id].default)
+  const ids = Object.keys(params);
+  const values = ids.map((id) => params[id].value ?? params[id].default);
   const core = {
     _ids: ids,
     _values: values,
@@ -34,19 +34,19 @@ export function makeCoreModel(params = {}, { opacities = null } = {}) {
     getParameterMaximumValue: (i) => params[ids[i]]?.max ?? 1,
     getParameterValueByIndex: (i) => values[i],
     getParameterValueById: (id) => {
-      const i = ids.indexOf(id)
-      return i < 0 ? 0 : values[i]
+      const i = ids.indexOf(id);
+      return i < 0 ? 0 : values[i];
     },
     setParameterValueByIndex: (i, v) => {
-      values[i] = v
+      values[i] = v;
     },
     setParameterValueById: (id, v) => {
-      const i = ids.indexOf(id)
-      if (i >= 0) values[i] = v
+      const i = ids.indexOf(id);
+      if (i >= 0) values[i] = v;
     },
-  }
-  if (opacities) core.getDrawableOpacity = (i) => opacities[i] ?? 0
-  return core
+  };
+  if (opacities) core.getDrawableOpacity = (i) => opacities[i] ?? 0;
+  return core;
 }
 
 /**
@@ -55,7 +55,7 @@ export function makeCoreModel(params = {}, { opacities = null } = {}) {
  */
 export function makeModel(
   core,
-  { motions = {}, hitAreas = {}, idleGroup = 'idle' } = {},
+  { motions = {}, hitAreas = {}, idleGroup = "idle" } = {},
 ) {
   return {
     _played: [],
@@ -66,7 +66,7 @@ export function makeModel(
       motionManager: { groups: { idle: idleGroup }, on() {} },
     },
     motion(group, index, priority) {
-      this._played.push({ group, index, priority })
+      this._played.push({ group, index, priority });
     },
-  }
+  };
 }

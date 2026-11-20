@@ -45,9 +45,10 @@ export function compareSkinNames(a, b) {
 }
 
 /**
- * 扫描 models/<角色>/<皮肤>/<皮肤>.model3.json，生成皮肤清单。
- * 显示名取 <皮肤>.l2d.json 的 name（extract.js 烘焙的游戏内皮肤名），
- * 没有烘焙文件的皮肤回退目录名。新增皮肤把目录丢进 models/ 刷新页面即生效。
+ * 扫描 models/<角色>/<皮肤>/，生成皮肤清单。两类皮肤：
+ * - L2D：<皮肤>.model3.json 在位，url 指向它；显示名取 <皮肤>.l2d.json 的 name。
+ * - Ani（spine）：<皮肤>.spine.json 在位（spineBake.js 产物），url 指向它，条目带 type: 'spine'。
+ * 显示名缺失回退目录名。新增皮肤把目录丢进 models/ 刷新页面即生效。
  */
 export function scanModels(modelsDir = resolve(ROOT, 'models')) {
   const models = []
@@ -57,12 +58,19 @@ export function scanModels(modelsDir = resolve(ROOT, 'models')) {
       const id = skin.name
       if (!skin.isDirectory()) continue
       const dir = join(modelsDir, char.name, id)
-      if (!existsSync(join(dir, `${id}.model3.json`))) continue
+      const spine = existsSync(join(dir, `${id}.spine.json`))
+      const l2d = existsSync(join(dir, `${id}.model3.json`))
+      if (!spine && !l2d) continue
       let name = id
+      // 显示名取自元数据文件（l2d.json / spine.json），与挂载 url 无关：
+      // L2D 挂载入口恒为 model3.json，spine 挂载入口为 spine.json
+      const metaFile = spine ? `${id}.spine.json` : `${id}.l2d.json`
       try {
-        name = JSON.parse(readFileSync(join(dir, `${id}.l2d.json`), 'utf8')).name || id
+        name = JSON.parse(readFileSync(join(dir, metaFile), 'utf8')).name || id
       } catch { } // 烘焙文件缺失/损坏时静默回退目录名
-      models.push({ id, name, url: `/models/${char.name}/${id}/${id}.model3.json` })
+      const entry = spine ? `${id}.spine.json` : `${id}.model3.json`
+      const url = `/models/${char.name}/${id}/${entry}`
+      models.push(spine ? { id, name, url, type: 'spine' } : { id, name, url })
     }
   }
   // 按显示名分组排序（符号→数字→字母→汉字），侧栏顺序与可见文字一致；同名回退 id

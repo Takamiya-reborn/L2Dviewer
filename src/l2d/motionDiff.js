@@ -6,50 +6,63 @@
 
 /** 单条曲线在 t 秒处的值（t 超出末段按末点值钳制） */
 export function sampleCurve(segments, t) {
-  let time = segments[0]
-  let value = segments[1]
-  for (let i = 2; i < segments.length;) {
-    const type = segments[i]
+  let time = segments[0];
+  let value = segments[1];
+  for (let i = 2; i < segments.length; ) {
+    const type = segments[i];
     if (type === 1) {
-      const t1 = segments[i + 5]
-      const v1 = segments[i + 6]
+      const t1 = segments[i + 5];
+      const v1 = segments[i + 6];
       if (t <= t1) {
-        if (t <= time) return value
+        if (t <= time) return value;
         // 贝塞尔按 x 三分搜索反解 s（与 scripts/tests/helpers/motion3.mjs 同法，24 次二分到 float 精度）
-        let lo = 0
-        let hi = 1
-        const x0 = time
-        const x1 = segments[i + 1]
-        const x2 = segments[i + 3]
+        let lo = 0;
+        let hi = 1;
+        const x0 = time;
+        const x1 = segments[i + 1];
+        const x2 = segments[i + 3];
         for (let k = 0; k < 24; k++) {
-          const s = (lo + hi) / 2
-          const u = 1 - s
-          if (u * u * u * x0 + 3 * u * u * s * x1 + 3 * u * s * s * x2 + s * s * s * t1 < t) lo = s
-          else hi = s
+          const s = (lo + hi) / 2;
+          const u = 1 - s;
+          if (
+            u * u * u * x0 +
+              3 * u * u * s * x1 +
+              3 * u * s * s * x2 +
+              s * s * s * t1 <
+            t
+          )
+            lo = s;
+          else hi = s;
         }
-        const s = (lo + hi) / 2
-        const u = 1 - s
-        const y0 = value
-        const y1 = segments[i + 2]
-        const y2 = segments[i + 4]
-        return u * u * u * y0 + 3 * u * u * s * y1 + 3 * u * s * s * y2 + s * s * s * v1
+        const s = (lo + hi) / 2;
+        const u = 1 - s;
+        const y0 = value;
+        const y1 = segments[i + 2];
+        const y2 = segments[i + 4];
+        return (
+          u * u * u * y0 +
+          3 * u * u * s * y1 +
+          3 * u * s * s * y2 +
+          s * s * s * v1
+        );
       }
-      time = t1
-      value = v1
-      i += 7
+      time = t1;
+      value = v1;
+      i += 7;
     } else {
-      const t1 = segments[i + 1]
-      const v1 = segments[i + 2]
+      const t1 = segments[i + 1];
+      const v1 = segments[i + 2];
       if (t <= t1) {
-        if (type === 0 && t1 !== time) return value + ((v1 - value) * (t - time)) / (t1 - time)
-        return value
+        if (type === 0 && t1 !== time)
+          return value + ((v1 - value) * (t - time)) / (t1 - time);
+        return value;
       }
-      time = t1
-      value = v1
-      i += 3
+      time = t1;
+      value = v1;
+      i += 3;
     }
   }
-  return value
+  return value;
 }
 
 /**
@@ -57,12 +70,12 @@ export function sampleCurve(segments, t) {
  * @returns {Map<string, {target: string, v: number}>} id -> 应值（Parameter/PartOpacity）
  */
 export function sampleMotionCurves(curves, t) {
-  const out = new Map()
+  const out = new Map();
   for (const c of curves) {
-    if (c.Target !== 'Parameter' && c.Target !== 'PartOpacity') continue
-    out.set(c.Id, { target: c.Target, v: sampleCurve(c.Segments, t) })
+    if (c.Target !== "Parameter" && c.Target !== "PartOpacity") continue;
+    out.set(c.Id, { target: c.Target, v: sampleCurve(c.Segments, t) });
   }
-  return out
+  return out;
 }
 
 /**
@@ -74,26 +87,29 @@ export function sampleMotionCurves(curves, t) {
  * @returns {{rows: Array, count: number}} rows 按 |差| 降序截断，count 为全量差条数
  */
 export function diffMotion(model, motionJson, t, tolDev = 1) {
-  const core = model.internalModel.coreModel
-  const expected = sampleMotionCurves(motionJson.Curves, t)
+  const core = model.internalModel.coreModel;
+  const expected = sampleMotionCurves(motionJson.Curves, t);
   // 原值直比（不钳量程）：落笔去钳位补丁后曲线原值直达内核，越界值是合法姿态（游戏同款），
   // 双侧钳制会把越界差分假性抹平
-  const n = core.getParameterCount()
-  const rows = []
+  const n = core.getParameterCount();
+  const rows = [];
   for (const [id, e] of expected) {
-    let got
-    const want = e.v
-    if (e.target === 'PartOpacity') {
-      got = core.getPartOpacityById(id)
+    let got;
+    const want = e.v;
+    if (e.target === "PartOpacity") {
+      got = core.getPartOpacityById(id);
     } else {
-      const idx = core.getParameterIndex(id)
-      got = idx >= 0 && idx < n ? core.getParameterValueByIndex(idx) : core.getParameterValueById(id)
+      const idx = core.getParameterIndex(id);
+      got =
+        idx >= 0 && idx < n
+          ? core.getParameterValueByIndex(idx)
+          : core.getParameterValueById(id);
     }
-    if (got == null) continue
-    const d = got - want
-    if (Math.abs(d) <= (e.target === 'PartOpacity' ? 0.02 : tolDev)) continue
-    rows.push({ id, target: e.target, want, got, d })
+    if (got == null) continue;
+    const d = got - want;
+    if (Math.abs(d) <= (e.target === "PartOpacity" ? 0.02 : tolDev)) continue;
+    rows.push({ id, target: e.target, want, got, d });
   }
-  rows.sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
-  return { rows, count: rows.length }
+  rows.sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+  return { rows, count: rows.length };
 }

@@ -19,12 +19,15 @@ const bakedIds = computed(() => new Set(MODELS.map((m) => m.id)))
 const tabs = computed(() =>
   CATALOG.entries.length
     ? CATALOG.entries.map((e) => ({
-        id: e.painting,
-        label: e.name,
-        state: bakedIds.value.has(e.painting) ? 'baked' : (e.state ?? 'remote'),
-        camp: campLabel(e.camp),
-      }))
-    : MODELS.map((m) => ({ id: m.id, label: m.name, state: 'baked', camp: '其他' })),
+      id: e.painting,
+      label: e.name,
+      state: bakedIds.value.has(e.painting) ? 'baked' : (e.state ?? 'remote'),
+      camp: campLabel(e.camp),
+      // 形态标记：ani=有 spine 版本；l2d 缺省真（目录条目缺省来自 live2d 索引）
+      ani: e.ani ?? false,
+      l2d: e.l2d ?? true,
+    }))
+    : MODELS.map((m) => ({ id: m.id, label: m.name, state: 'baked', camp: '其他', ani: false, l2d: true })),
 )
 
 /** 待拉取确认的皮肤条目（SkinTab 灰色条目点击时设置，PullDialog 关闭时清空） */
@@ -42,18 +45,19 @@ const stageRef = ref(null)
 const triggers = ref([])
 const activeTrigger = ref('')
 /**
- * 不进状态触发面板的动作组：idle 是自动循环的待机动作、effect 是常驻氛围层
- * （ambient.js 叠加）、touch_idle/touch_drag 只由舞台手势（点击/拖拽松手）
- * 触发；按 TRIGGER_ORDER 排列，未收录的排末尾。
+ * 状态触发面板展示全量动作组：idle/touch_idle/touch_drag 等常驻与手势组也出
+ * 按钮（触发开关不只驱动动作、还驱动语音）；模型里没有可播动作的组点击即
+ * no-op。effect 例外——它是 ambient.js 采样叠加的常驻氛围层，既非事件也无
+ * 台词，不进面板。按 TRIGGER_ORDER 排列，未收录的排末尾。
  */
-const NON_TRIGGERS = new Set(['idle', 'effect', 'touch_idle', 'touch_drag'])
+const AMBIENT_GROUPS = new Set(['effect'])
 const triggerItems = computed(() => {
   const rank = (id) => {
     const i = TRIGGER_ORDER.indexOf(id)
     return i === -1 ? TRIGGER_ORDER.length : i
   }
   return triggers.value
-    .filter((id) => !NON_TRIGGERS.has(id))
+    .filter((id) => !AMBIENT_GROUPS.has(id))
     .map((id) => ({ id, label: TRIGGER_LABELS[id] ?? id }))
     .sort((a, b) => rank(a.id) - rank(b.id)) // Array.sort 稳定，同级保持声明顺序
 })

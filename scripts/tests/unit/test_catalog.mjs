@@ -1,7 +1,7 @@
 // 皮肤目录纯逻辑单测：Lua 模板轻量解析、目录构建（交集/派生/撞名/排序）、状态分类。
 // 全部合成配置，不依赖真实资产与设备。
 import { suite } from '../helpers/suite.mjs'
-import { buildCatalog } from '../../gen_catalog.js'
+import { buildCatalog, parseSpinePaintings } from '../../gen_catalog.js'
 import { classifyState } from '../../dev/api.js'
 import { readAllSkinTemplates } from '../../extract/lua.js'
 
@@ -96,11 +96,22 @@ check('派生条目继承基础阵营', byPainting.basis_2?.camp === 4)
 check('全不命中回退 painting 本名', byPainting.z46_2?.name === 'z46_2' && byPainting.z46_2.derived === true)
 check('回退条目无 camp 不落字段', !('camp' in byPainting.z46_2))
 check('阵营表按 ship_group 命中', byPainting.ph_upper_2?.camp === 8)
-check('撞名防御追加 painting 后缀', byPainting.dup_1?.name === '同名' && byPainting.dup_2?.name === '同名（dup_2）')
+// 同名皮肤=同一皮肤的两种资源形态（动态皮肤两条独立模板两个 bundle），合并为单条目
+const dupEntry = catalog.entries.find((e) => e.name === '同名')
+check('撞名合并为单条目', catalog.entries.filter((e) => e.name === '同名').length === 1 && dupEntry?.painting === 'dup_1')
+check('合并条目留存并入 painting', dupEntry?.altPaintings?.length === 1 && dupEntry.altPaintings[0] === 'dup_2')
 check('namecode 占位符代换', byPainting.ph_ship?.name === '绫波')
 check('大小写不敏感命中模板（bundle 全小写）', byPainting.ph_upper_2?.name === '大写皮肤' && byPainting.ph_upper_2.skin_id === 700001 && !byPainting.ph_upper_2.derived)
 check('缺代换表保留占位符', buildCatalog(TEMPLATE_TEXT, ['ph_ship'], undefined).entries[0].name === '{namecode:6}')
 check('无版本号时省略 version 字段', !('version' in buildCatalog(TEMPLATE_TEXT, bundles, undefined)))
+// spinepainting 名单与 live2d 索引可能重合（两栖皮肤）：单条目兼落 ani，l2d 形态来自 live2d 收录
+const spineCatalog = buildCatalog(TEMPLATE_TEXT, ['aersasi_3', 'dup_1'], undefined, new Map(), new Map(), new Set(['ph_ship', 'dup_1']))
+const spineByName = Object.fromEntries(spineCatalog.entries.map((e) => [e.painting, e]))
+check('spine 名单条目落 ani 标记', spineByName.ph_ship?.ani === true && spineByName.aersasi_3?.ani === undefined)
+check('两栖重合合并为单条目且兼落 ani', spineCatalog.entries.filter((e) => e.painting === 'dup_1').length === 1 && spineByName.dup_1?.ani === true)
+check('仅 spine 条目落 l2d: false', spineByName.ph_ship?.l2d === false && spineByName.dup_1?.l2d === undefined && spineByName.aersasi_3?.l2d === undefined)
+const spineSet = parseSpinePaintings('spinepainting/ph_ship,40374,ab\nspinepainting/ph_ship_res,5473212,ab\nspinepainting/ph_ship_asmr,9916,ab\nspinepainting/ph_ship_hx,44701,ab\nlive2d/aersasi_3,2385312,ab\n')
+check('spinepainting 剔除 _res/_asmr、忽略跨目录（_hx 由 buildCatalog 层剔除）', spineSet.size === 2 && spineSet.has('ph_ship') && spineSet.has('ph_ship_hx'))
 const firstChars = catalog.entries.map((e) => e.name[0])
 check('首字符类别单调不减（符号→数字→字母→汉字）',
     firstChars.every((ch, i) => i === 0 || classOf(ch) >= classOf(firstChars[i - 1])))

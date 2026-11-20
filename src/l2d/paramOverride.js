@@ -7,25 +7,25 @@
 
 /** @returns {{entries: Map<string, {value: number, on: boolean}>, set, toggle, remove, apply}} */
 export function createParamOverride() {
-  const entries = new Map()
+  const entries = new Map();
   return {
     entries,
     set(id, value) {
-      const e = entries.get(id) ?? { value: 0, on: true }
-      e.value = value
-      entries.set(id, e)
+      const e = entries.get(id) ?? { value: 0, on: true };
+      e.value = value;
+      entries.set(id, e);
     },
     toggle(id, on) {
-      const e = entries.get(id)
-      if (e) e.on = on
+      const e = entries.get(id);
+      if (e) e.on = on;
     },
     remove(id) {
-      entries.delete(id)
+      entries.delete(id);
     },
     apply(coreModel) {
       for (const [id, e] of entries) {
-        if (e.on) coreModel.setParameterValueById(id, e.value)
+        if (e.on) coreModel.setParameterValueById(id, e.value);
       }
     },
-  }
+  };
 }

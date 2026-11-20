@@ -12,7 +12,7 @@
 node scripts/pull_bundles.js <skin_id> --host [host:port]
 ```
 
-脚本从设备的 `files/AssetBundles/live2d/` 获取 bundle，索引和临时文件放在 `.tmp/`，bundle 默认落在 `.tmp/bundles/`。也可以手动提供 bundle 路径给提取脚本。
+脚本从设备的 `files/AssetBundles/live2d/` 获取 bundle，索引和临时文件放在 `.tmp/`，bundle 默认落在 `.tmp/bundles/`。也可以手动提供 bundle 路径给提取脚本。ani 动态皮肤在 `files/AssetBundles/spinepainting/` 类别下，按名拉取会连带 `<painting>_res` 骨架资源对（解析 spine 目录与远端大小依赖全类别总索引 `hashes.csv`，同步索引在拉取之前执行；首次拉 ani 皮肤前需先跑过一次 `--index`）。
 
 ### 1.2 获取 Lua 配置
 
@@ -41,7 +41,7 @@ npm run update
 
 注意：
 
-- 索引反映的是设备 `files/AssetBundles/live2d/` 的实际内容：游戏内未触发下载的 L2D 皮肤不会出现；ani 类动态皮肤（会动但不能交互）不落此目录，两者均属正常，不是脚本漏了；
+- 索引反映的是设备 `files/AssetBundles/live2d/` 的实际内容：游戏内未触发下载的皮肤不会出现在索引里，属正常，不是脚本漏了。ani 动态皮肤不在 live2d 索引内，走 `spinepainting/` 类别经 `hashes.csv` 索引拉取与提取（见 3.4 节），目录中落 `ani` 形态标记；
 - GitHub 直连不通时用 `npm run update -- --proxy http://127.0.0.1:端口` 或设置 `HTTPS_PROXY` 环境变量；缺省时会自动探测本机常见代理端口（7890/7892/7897）。
 
 ## 2. 解包 bundle
@@ -51,7 +51,7 @@ node scripts/extract.js <skin_id>
 node scripts/extract.js <bundle_path> <out_dir>
 ```
 
-第一种形式从 `.tmp/bundles/` 查找 bundle，并将结果写入 `models/<角色>/<skin_id>/`；第二种形式显式指定输入和输出目录。`extract.js` 使用 unityfs-js 读取 UnityFS 和 prefab 的 typetree，按对象类型收集 Cubism 模型、物理、贴图、Animator、AnimationClip 与游戏自定义组件。
+第一种形式从 `.tmp/bundles/` 查找 bundle，并将结果写入 `models/<角色>/<skin_id>/`；第二种形式显式指定输入和输出目录。`extract.js` 使用 unityfs-js 读取 UnityFS 和 prefab 的 typetree，按对象类型收集 Cubism 模型、物理、贴图、Animator、AnimationClip 与游戏自定义组件。主 bundle 的 MonoScript 表含 `SkeletonGraphic` 时判定为 ani（spine）皮肤，走独立的解析与烘焙分支（3.4 节），不进入 Cubism 管线。
 
 ## 3. 解析与转换
 
@@ -86,6 +86,17 @@ Unity AnimationClip 的绑定使用 CRC32 哈希，脚本会枚举 Transform 路
 
 AnyState 转移自带过渡时长（`m_TransitionDuration`，`m_HasFixedDuration=True` 时为绝对秒），这是游戏内各动作过渡快慢不一的出处。提取脚本按 clip 名把它整理为 `fades.json`（实测分布：系统/触摸老条目 0.5s，新条目与 `_ex` 变体 0.25s，`login`/`home`/`change_in`/`change_out` 0s 硬切），播放端逐动作设置交叉渐变时长。
 
+### 3.4 Ani（spine）皮肤
+
+ani 动态皮肤使用 spine 骨架动画而非 Cubism。资源成对出现：主 bundle `spinepainting/<painting>` 只含 SkeletonGraphic UI 预制体，骨架数据在伴生 `<painting>_res` bundle 中（SkeletonDataAsset、SpineAtlasAsset、.skel 二进制、.atlas 文本与 ASTC 贴图）。
+
+- `.skel` 是 spine 3.8 系二进制，语法以游戏 spine-unity 程序集的 SkeletonBinary.ReadSkeletonData 为准（nonessential 时头尾各多一个调试占位 int，是与官方 3.8 语法的分歧点）；`spineSkel.js` 的 `parseSkel()` 解析、`toSpine38Json()` 转换为 pixi-spine 3.8 读取器方言的 JSON（skins 数组形态、时间轴按名键控、加权顶点平铺单数组等）。美术迭代遗留的旧附件名悬挂引用按同槽位附件名集合做最长公共前缀修补，修补后仍落空的 deform 条目丢弃；
+- `spineBake.js` 的 `bakeSpine()` 消费主 bundle 与 `_res` 两个 bundle：变体表取 res 内全部 SkeletonDataAsset；分层预制体（根 GameObject 子层级按序挂多个 SkeletonGraphic，共享坐标系）落 `parts` 有序分区表，单骨架走默认变体；
+- 贴图统一翻转口径为标准 top-down PNG（`decodeAstcTexture()` flip 默认 true），pixi-spine 无 spine-unity 的内部 UV 转换；
+- .skel/.atlas 的 TextAsset 必须经 `info.object.data` 取原始字节——typetree 的 m_Script 经 UTF-8 解码已毁二进制段。
+
+ani 皮肤产物与 L2D 皮肤同目录约定（见第 4 节）。
+
 ## 4. 产物与用途
 
 ```text
@@ -101,6 +112,18 @@ AnyState 转移自带过渡时长（`m_TransitionDuration`，`m_HasFixedDuration
 ├── <id>.inventory.json    # bundle 全量解析参考
 ├── textures/              # PNG 纹理
 └── motions/               # motion3 动作曲线
+```
+
+ani（spine）皮肤的产物布局：
+
+```text
+<out_dir>/
+├── <id>.spine.json        # 元数据：painting、名称、默认变体、变体表（骨架/图集/贴图、
+│                          #   startingAnimation/startingLoop/initialSkin）、分层预制体 parts
+├── <变体>.json            # spine 3.8 JSON（pixi-spine 方言）
+├── <变体>.skel            # 原始 .skel 字节归档
+├── <变体>.atlas           # 图集描述文本
+└── <atlas 页名>.png       # 贴图（top-down 行序）
 ```
 
 这些文件的关系不是简单的格式转换：
@@ -125,6 +148,7 @@ AnyState 转移自带过渡时长（`m_TransitionDuration`，`m_HasFixedDuration
 | `ship_l2d` 参数机              | 参数拖拽、档位吸附、回弹和触发器         |
 | `listener_data`                | 机器间参数联动与 idle 换挡               |
 | `effect` AnimationClip         | 常驻氛围参数叠加                         |
+| SkeletonDataAsset / .skel / .atlas | ani 皮肤骨架动画（pixi-spine 3.8 加载；initialSkin 语义回落 skins[1]，变体切换重挂） |
 
 因此，提取脚本的目标不是只生成一套静态模型，而是把渲染资源、动画路由、参数默认值和游戏控制层拆成可检查的文件，再由查看器重新组合成可交互模型。
 
@@ -134,4 +158,5 @@ AnyState 转移自带过渡时长（`m_TransitionDuration`，`m_HasFixedDuration
 - 个别 CRC32 绑定可能无法映射到 Transform，脚本会告警并保留原始绑定；
 - 口型和 CRI 语音驱动不在提取范围内；
 - muscle-clip 的解码依据 Unity 序列化规范实现（流式斜率递推与 UnityPy 1.9.28 逐位一致）；
+- ani（spine）皮肤暂无交互层（主 bundle 内的命中区未烘焙），查看器中纯观看 + 变体切换；
 - 模型目录属于从游戏客户端提取的资源，不应提交或再分发。

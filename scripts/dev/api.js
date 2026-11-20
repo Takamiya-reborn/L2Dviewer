@@ -78,15 +78,21 @@ function queryDevices() {
 // 单任务槽：同一时刻只跑一条"拉取 -> 烘焙"链，前端轮询 /api/job 展示进度。
 let job = null
 
-/** hashes-live2d.csv 里该 painting 的远端 bundle 字节大小，查不到返回 null（pull 进度条退化为不定态）。 */
-function bundleRemoteSize(painting) {
-  try {
-    for (const line of readFileSync(resolve(ROOT, '.tmp', 'hashes-live2d.csv'), 'utf8').split('\n')) {
-      if ((line.split(',')[0] ?? '').replace(/^live2d\//, '').trim() === painting) {
-        return Number(line.split(',')[1]) || null
+/** bundle 索引里该 painting 的远端字节大小（live2d 走 hashes-live2d.csv；Ani 进度盯 _res 依赖对——骨架数据所在的大文件），查不到返回 null（pull 进度条退化为不定态）。 */
+function bundleRemoteSize(painting, ani = false) {
+  for (const [file, prefix] of [
+    ['hashes-live2d.csv', 'live2d/'],
+    ['hashes.csv', 'spinepainting/'],
+  ]) {
+    try {
+      const name = ani ? `${painting}_res` : painting
+      for (const line of readFileSync(resolve(ROOT, '.tmp', file), 'utf8').split('\n')) {
+        if ((line.split(',')[0] ?? '') === prefix + name) {
+          return Number(line.split(',')[1]) || null
+        }
       }
-    }
-  } catch { }
+    } catch { }
+  }
   return null
 }
 
@@ -135,7 +141,7 @@ function runStep(args, timeout, push, onLine = null) {
   })
 }
 
-function startJob(painting) {
+function startJob(painting, catalog) {
   const push = (line) => {
     job.log.push(line)
     if (job.log.length > LOG_LIMIT) job.log.splice(0, job.log.length - LOG_LIMIT)
@@ -144,9 +150,11 @@ function startJob(painting) {
     painting, phase: 'pull', status: 'running', log: [], error: null, startedAt: Date.now(),
     progress: { percent: 2, label: '准备拉取' },
   }
-  // pull 阶段进度：按本地 bundle 文件增长对比索引里的远端大小轮询；查不到大小则不定态
-  const localPath = join(BUNDLES_DIR, painting)
-  const remoteSize = bundleRemoteSize(painting)
+  // pull 阶段进度：按本地 bundle 文件增长对比索引里的远端大小轮询；查不到大小则不定态。
+  // Ani 皮肤盯 _res 依赖对（骨架数据所在的大文件，主 bundle 只有几 KB 的 UI 预制体）
+  const isAni = catalog?.entries.find((e) => e.painting === painting)?.ani === true
+  const localPath = join(BUNDLES_DIR, isAni ? `${painting}_res` : painting)
+  const remoteSize = bundleRemoteSize(painting, isAni)
   const poll = setInterval(() => {
     try {
       const size = statSync(localPath).size
@@ -224,7 +232,7 @@ export function catalogApi() {
             const bakedIds = new Set(scanModels(MODELS_DIR).map((m) => m.id))
             if (bakedIds.has(painting)) return json(res, 409, { error: '该皮肤已烘焙，直接点击加载即可' })
             if (job && job.status === 'running') return json(res, 409, { error: '已有烘焙任务进行中，请稍候', job })
-            startJob(painting)
+            startJob(painting, catalog)
             return json(res, 200, { ok: true, job })
           })
         }

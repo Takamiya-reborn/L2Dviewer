@@ -1,33 +1,33 @@
 /** 指针手势状态机（原生 DOM 事件，模拟 Unity 端控制器）：视线目标是当前指针位置，按住才跟随、松手回正（focusController 内部缓动过渡）；松手时位移小于阈值算点击、否则算拖拽（触发 touch_drag 分区而非 touch_idle 分区）。按下先尝试机器分区分流（拖拽参数机接管），未消费再走 meshHitTest 精确命中 -> 状态机播放路径。读 ctx.app / ctx.model / ctx.orch / ctx.dragScale / ctx.actions.handleHitAreas，写 ctx.lastGesture。 */
-import { meshHitTest } from '../utils/interaction'
+import { meshHitTest } from "../utils/interaction";
 
 // 游戏内：松手时位移小于阈值算点击、否则算拖拽
-const DRAG_THRESHOLD = 10
+const DRAG_THRESHOLD = 10;
 // 视线追踪起步阈值：过滤按住时的手抖，位移越过它才认定"开始拖动"
-const GAZE_START_THRESHOLD = 3
+const GAZE_START_THRESHOLD = 3;
 
 /**
  * @param ctx 舞台上下文（见 L2dStage.vue）
  * @returns {{ onPointerDown, onPointerMove, onPointerUp, onPointerCancel }} 绑定到 canvas 的四个原生指针监听器
  */
 export function createGestures(ctx) {
-  let pressing = false
-  let dragging = false
-  let downX = 0
-  let downY = 0
-  let maxDist = 0
+  let pressing = false;
+  let dragging = false;
+  let downX = 0;
+  let downY = 0;
+  let maxDist = 0;
   // 本次按压是否落在机器分区上（down 时判定，up 时分流）
-  let machineConsumed = false
+  let machineConsumed = false;
 
   /** 指针事件坐标 -> 舞台 CSS 像素坐标（与模型布局同一空间） */
   function pointerPos(e) {
-    const rect = ctx.app.view.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    const rect = ctx.app.view.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
   /** 指针坐标 -> 拖拽机坐标系（游戏屏幕像素）：机器只用差值，命中判定仍用视口 px，故只有喂给编排器的坐标过 dragScale */
   function dragPos(p) {
-    return { x: p.x * ctx.dragScale, y: p.y * ctx.dragScale }
+    return { x: p.x * ctx.dragScale, y: p.y * ctx.dragScale };
   }
 
   /**
@@ -36,116 +36,123 @@ export function createGestures(ctx) {
    * 数组序 = 路由优先级：**ship_l2d 条目序最大的命中赢**。依据是游戏 Live2dChar.GetDragPart 的反汇编——遍历全部 raycast 命中，对每个命中的 drawable 名在 DragParts 名单里 FindIndex，更新条件 idx≥0 且 best≤idx+1 → running max（csinc 隐含 +1），返回名单下标最大者，与视觉渲染序、射线距离均无关。
    */
   function machineZonesAt(x, y) {
-    const model = ctx.model
-    const orch = ctx.orch
+    const model = ctx.model;
+    const orch = ctx.orch;
     // 换模型窗口期 ctx.model 已指向未揭幕的新模型，不可交互
-    if (!orch || !model || !model.visible) return []
-    const hits = meshHitTest(model, x, y)
-    const areas = model.internalModel.hitAreas ?? {}
-    const zones = []
+    if (!orch || !model || !model.visible) return [];
+    const hits = meshHitTest(model, x, y);
+    const areas = model.internalModel.hitAreas ?? {};
+    const zones = [];
     for (const name of hits) {
-      const order = orch.zoneOrder(name)
-      if (order < 0) continue
+      const order = orch.zoneOrder(name);
+      if (order < 0) continue;
       if (areas[name]?.index !== undefined) {
-        zones.push({ name, order })
+        zones.push({ name, order });
       }
     }
     // 名单序最大者胜：order = 分区在机器注册序（ship_l2d 条目序）里的最早位置，降序排即赢家在前
-    return zones.sort((a, b) => b.order - a.order).map((z) => z.name)
+    return zones.sort((a, b) => b.order - a.order).map((z) => z.name);
   }
 
   /** 路由取胜者 = 数组第一个（= ship_l2d 条目序最大的命中，见 machineZonesAt） */
   function pickMachineZone(x, y) {
-    return machineZonesAt(x, y)[0] ?? ''
+    return machineZonesAt(x, y)[0] ?? "";
   }
 
-  /** 视线跟随指针（仅按住期间跟随） */
+  /** 视线跟随指针（仅按住期间跟随）；spine 皮肤无 focus 能力，方法级旁路 */
   function followGaze(x, y) {
-    ctx.model?.focus(x, y)
+    ctx.model?.focus?.(x, y);
   }
 
-  /** 视线回正：焦点归零，focusController 内部缓动过渡 */
+  /** 视线回正：焦点归零，focusController 内部缓动过渡；spine 皮肤无该控制器，旁路 */
   function resetGaze() {
-    ctx.model?.internalModel.focusController.focus(0, 0)
+    ctx.model?.internalModel?.focusController?.focus(0, 0);
   }
 
   function onPointerDown(e) {
-    const { x, y } = pointerPos(e)
+    const { x, y } = pointerPos(e);
     // 指针捕获：按下后无论在哪里松手（HUD 浮层上、画布外）pointerup 都保证送达画布。机器按压依赖 down/up 成对收尾（up 清 _active 与按压锁），鼠标没有隐式捕获，丢一次 up 会双滞留（按压锁与 _active 都不清）
     try {
-      e.target.setPointerCapture?.(e.pointerId)
+      e.target.setPointerCapture?.(e.pointerId);
     } catch {
       /* 指针已释放等边缘态：捕获失败按无捕获走 */
     }
-    pressing = true
-    dragging = false
-    downX = x
-    downY = y
-    maxDist = 0
+    pressing = true;
+    dragging = false;
+    downX = x;
+    downY = y;
+    maxDist = 0;
     // 拖拽参数机分流：按下命中机器分区（可见的 draw_able_name）则由机器接管
-    machineConsumed = false
+    machineConsumed = false;
     // 长按不动不追踪视线，起步判断推迟到 onPointerMove
-    const zones = machineZonesAt(x, y)
+    const zones = machineZonesAt(x, y);
     // 同点多分区留痕：留痕目的是让重叠路由可见——重叠时谁胜出（末位命中）必须看得到，否则路由问题无从排查
     if (zones.length > 1) {
-      ctx.orch?.debug?.(`分区重叠(取:${zones[0]},同点:${zones.slice(1).join(',')})`)
+      ctx.orch?.debug?.(
+        `分区重叠(取:${zones[0]},同点:${zones.slice(1).join(",")})`,
+      );
     }
     // `?.`：mountModel 在 await Live2DModel.from 前就置 ctx.orch = null，
     // machineConsumed 闭包跨 remount 存活，切皮肤窗口内按下会走到 null 上
-    if (zones.length) machineConsumed = ctx.orch?.onDown(zones[0], dragPos({ x, y })) ?? false
+    if (zones.length)
+      machineConsumed = ctx.orch?.onDown(zones[0], dragPos({ x, y })) ?? false;
   }
 
   function onPointerMove(e) {
-    const { x, y } = pointerPos(e)
-    if (!pressing) return
+    const { x, y } = pointerPos(e);
+    if (!pressing) return;
     // 视线只在按住期间跟随
-    followGaze(x, y)
-    maxDist = Math.max(maxDist, Math.hypot(x - downX, y - downY))
-    if (!dragging && maxDist > GAZE_START_THRESHOLD) dragging = true
+    followGaze(x, y);
+    maxDist = Math.max(maxDist, Math.hypot(x - downX, y - downY));
+    if (!dragging && maxDist > GAZE_START_THRESHOLD) dragging = true;
     // 按住期间拖拽参数机持续驱动（游戏 onPointDrag 对全部机器广播）
-    ctx.orch?.onMove(dragPos({ x, y }))
+    ctx.orch?.onMove(dragPos({ x, y }));
   }
 
   function onPointerUp(e) {
-    if (!pressing) return
-    pressing = false
+    if (!pressing) return;
+    pressing = false;
     // 松手视线回正：焦点归零，focusController 内部缓动过渡
-    resetGaze()
+    resetGaze();
     // 换模型窗口期 ctx.model 已指向未揭幕的新模型，不可交互
-    if (!ctx.model?.visible) return
-    const { x, y } = pointerPos(e)
-    const lastGesture = maxDist >= DRAG_THRESHOLD ? 'drag' : 'tap'
-    ctx.lastGesture = lastGesture
+    if (!ctx.model?.visible) return;
+    const { x, y } = pointerPos(e);
+    const lastGesture = maxDist >= DRAG_THRESHOLD ? "drag" : "tap";
+    ctx.lastGesture = lastGesture;
     // 机器接管的按压：松手交回编排器（点击判定/吸附/回弹都在机器里收尾），
     // 不再走 model.tap 旧路径；按下没碰到机器分区但松手落在机器分区上时同样
     // 交给编排器收尾（未激活的机器不构成点击，与游戏 startDrag 前置一致）
     if (machineConsumed) {
       // `?.` 同 onDown：按压中模型被换（mountModel 清 orch），up 不能炸
-      ctx.orch?.onUp('', dragPos({ x, y }))
-      return
+      ctx.orch?.onUp("", dragPos({ x, y }));
+      return;
     }
-    const upZone = pickMachineZone(x, y)
-    if (upZone && ctx.orch?.onUp(upZone, dragPos({ x, y }))) return
+    const upZone = pickMachineZone(x, y);
+    if (upZone && ctx.orch?.onUp(upZone, dragPos({ x, y }))) return;
+    // spine 皮肤（Ani 类）无网格命中层，松手交互到此为止
+    if (!ctx.model?.internalModel) return;
     // 松手点做网格级精确命中（游戏 CubismRaycaster 语义；model.tap 内部是包围盒 hitTest，这里直接算好命中名单直呼 handleHitAreas 绕开它）：点击走 idle/head/body 分区，拖拽走 touch_drag 分区
-    const hits = meshHitTest(ctx.model, x, y) // 纯查询,无副作用
+    const hits = meshHitTest(ctx.model, x, y); // 纯查询,无副作用
     // 落点诊断：留痕目的是区分"点了没反应"时到底命中了什么——handleHitAreas 路径不写触发链，这里把实际命中的分区名单交代进触发链，路由问题可排查
     // "未达机器分区"是常态不是异常：摸头/摸身体/touch_special 等本就没有机器（ship_l2d 无此分区），点击本就该由 C# 反应路径（handleHitAreas）接手播放
     if (hits.length) {
-      ctx.orch?.debug?.(`C#反应路径(命中:${hits.slice(0, 4).join(',')}${hits.length > 4 ? ` 等${hits.length}个` : ''})`)
-      ctx.actions.handleHitAreas(hits)
+      ctx.orch?.debug?.(
+        `C#反应路径(命中:${hits.slice(0, 4).join(",")}${hits.length > 4 ? ` 等${hits.length}个` : ""})`,
+      );
+      ctx.actions.handleHitAreas(hits);
     } else {
       // 空命中也要留痕：留痕目的是能区分"没点到"和"点了但网格隐藏/移位"，命中 0 个同样要交代进触发链
-      ctx.orch?.debug?.('落点无网格(命中0个)')
+      ctx.orch?.debug?.("落点无网格(命中0个)");
     }
   }
 
   function onPointerCancel() {
-    if (!pressing) return
-    pressing = false
-    resetGaze()
+    if (!pressing) return;
+    pressing = false;
+    resetGaze();
     // 拖拽被系统打断（移出画布等）：机器按压作废，不构成点击
-    ctx.orch?.onCancel()
+    ctx.orch?.onCancel();
   }
 
-  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel }
+  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel };
 }

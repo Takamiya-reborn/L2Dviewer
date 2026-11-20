@@ -17,12 +17,18 @@ defineEmits(['update:modelValue', 'pull-request'])
 /** 侧栏默认收起，靠左缘圆钮拉开 */
 const collapsed = ref(true)
 
-/** 按显示名或皮肤代号（id）子串过滤（不区分大小写），叠加状态档与阵营档；全量目录下代号也能定位 */
+/** 按显示名或皮肤代号（id）子串过滤（不区分大小写），叠加类型/状态/阵营档；全量目录下代号也能定位 */
 const query = ref('')
 const filtered = computed(() => {
   let list = props.tabs
   if (stateFilter.value !== 'all') {
     list = list.filter((tab) => (tab.state ?? 'baked') === stateFilter.value)
+  }
+  if (typeFilter.value !== null) {
+    // 形态过滤：Live2D=有 l2d 版本可加载，Ani=有 spine 版本；两栖皮肤两个档都命中
+    list = list.filter((tab) =>
+      typeFilter.value === 'ani' ? (tab.ani ?? false) : (tab.l2d ?? true),
+    )
   }
   if (campFilter.value) {
     list = list.filter((tab) => tab.camp === campFilter.value)
@@ -73,9 +79,29 @@ const STATE_HINTS = {
   remote: '未拉取 · 点击从设备拉取',
 }
 
-/** 筛选行（状态 + 阵营 chips）默认收起，搜索栏右侧按钮展开；有档位生效时按钮保持高亮 */
+/** 类型筛选：null=全类型；ani 标记来自目录条目（游戏模板 spine_use_live2d） */
+const TYPE_FILTERS = [
+  { key: null, label: '全类型' },
+  { key: 'live2d', label: 'Live2D' },
+  { key: 'ani', label: 'Ani' },
+]
+const typeFilter = ref(null)
+const typeChips = computed(() =>
+  TYPE_FILTERS.map((f) => ({
+    ...f,
+    count: f.key === null
+      ? props.tabs.length
+      : props.tabs.filter((tab) =>
+        f.key === 'ani' ? (tab.ani ?? false) : (tab.l2d ?? true),
+      ).length,
+  })),
+)
+
+/** 筛选行（类型 + 状态 + 阵营 chips）默认收起，搜索栏右侧按钮展开；有档位生效时按钮保持高亮 */
 const showFilters = ref(false)
-const filterActive = computed(() => stateFilter.value !== 'all' || campFilter.value !== null)
+const filterActive = computed(
+  () => stateFilter.value !== 'all' || typeFilter.value !== null || campFilter.value !== null,
+)
 </script>
 
 <template>
@@ -91,26 +117,41 @@ const filterActive = computed(() => stateFilter.value !== 'all' || campFilter.va
             <X :size="14" />
           </button>
         </div>
-        <button class="filter-toggle" :class="{ on: showFilters || filterActive }" type="button"
-          title="状态与阵营筛选" @click="showFilters = !showFilters">
+        <button class="filter-toggle" :class="{ on: showFilters || filterActive }" type="button" title="状态与阵营筛选"
+          @click="showFilters = !showFilters">
           <ListFilter :size="15" />
         </button>
       </div>
       <div class="filters-wrap" :class="{ open: showFilters }">
         <div class="filters-inner">
-          <div class="filters">
-            <button v-for="f in STATE_FILTERS" v-show="f.key === 'all' || counts[f.key]" :key="f.key"
-              class="chip" :class="{ on: stateFilter === f.key }" type="button" @click="stateFilter = f.key">
-              <i v-if="f.key !== 'all'" class="dot" :class="f.key" />{{ f.label }}
-              <span class="count">{{ counts[f.key] }}</span>
-            </button>
+          <div class="filter-group">
+            <span class="group-label">类型</span>
+            <div class="chips">
+              <button v-for="f in typeChips" :key="f.key ?? 'all-types'" class="chip"
+                :class="{ on: typeFilter === f.key }" type="button" @click="typeFilter = f.key">
+                {{ f.label }} <span class="count">{{ f.count }}</span>
+              </button>
+            </div>
           </div>
-          <div class="filters">
-            <button v-for="c in campChips" :key="c.key ?? 'all-camps'" class="chip"
-              :class="{ on: c.key === null ? campFilter === null : campFilter === c.key }" type="button"
-              @click="campFilter = campFilter === c.key ? null : c.key">
-              {{ c.label }} <span class="count">{{ c.count }}</span>
-            </button>
+          <div class="filter-group">
+            <span class="group-label">状态</span>
+            <div class="chips">
+              <button v-for="f in STATE_FILTERS" v-show="f.key === 'all' || counts[f.key]" :key="f.key" class="chip"
+                :class="{ on: stateFilter === f.key }" type="button" @click="stateFilter = f.key">
+                <i v-if="f.key !== 'all'" class="dot" :class="f.key" />{{ f.label }}
+                <span class="count">{{ counts[f.key] }}</span>
+              </button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <span class="group-label">阵营</span>
+            <div class="chips">
+              <button v-for="c in campChips" :key="c.key ?? 'all-camps'" class="chip"
+                :class="{ on: c.key === null ? campFilter === null : campFilter === c.key }" type="button"
+                @click="campFilter = campFilter === c.key ? null : c.key">
+                {{ c.label }} <span class="count">{{ c.count }}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -192,10 +233,14 @@ const filterActive = computed(() => stateFilter.value !== 'all' || campFilter.va
   color: #e8e8ee;
 }
 
+/* 标题：居中 + 灰底横带分区 */
 .title {
-  padding: 14px 16px 10px;
+  margin: 0 0 14px;
+  padding: 10px 16px;
+  background: #202028;
   color: #8a8a93;
-  font: 600 12px/1.4 system-ui, sans-serif;
+  font: 600 14px/1.4 system-ui, sans-serif;
+  text-align: center;
   letter-spacing: 0.08em;
 }
 
@@ -204,19 +249,19 @@ const filterActive = computed(() => stateFilter.value !== 'all' || campFilter.va
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 20px 12px;
+  margin: 0 20px 18px;
 }
 
-/* 搜索框：对齐卡片主题的圆角输入条 */
+/* 搜索框：对齐卡片主题的圆角输入条，实底不透出模型画面 */
 .search {
   position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: #1c1c23;
   transition: border-color 0.15s;
 }
 
@@ -291,47 +336,82 @@ const filterActive = computed(() => stateFilter.value !== 'all' || campFilter.va
   overflow: hidden;
 }
 
-/* 状态筛选 chips：档位标签 + 计数，圆点兼作卡片状态图例 */
-.filters {
+/* 筛选分组：小标题 + chips 行，组间留白拉开分区 */
+.filter-group {
+  margin: 0 20px 18px;
+}
+
+/* 分组标题：负边距通到面板两缘，做成居中灰底横带分隔 */
+.group-label {
+  display: block;
+  margin: 0 -20px 10px;
+  padding: 6px 20px;
+  background: #202028;
+  color: #8a8a93;
+  font: 600 13px/1.2 system-ui, sans-serif;
+  text-align: center;
+  letter-spacing: 0.1em;
+}
+
+.chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 0 20px 12px;
 }
 
+/* 状态筛选 chips：档位标签 + 计数徽章，实底不透出模型画面，圆点兼作卡片状态图例 */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
-  color: #8a8a93;
-  font: 500 12px/1.4 system-ui, sans-serif;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  background: #1c1c23;
+  color: #a8a8b2;
+  font: 600 13px/1.4 system-ui, sans-serif;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .chip:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #c8c8d0;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: #26262e;
+  color: #e8e8ee;
 }
 
+/* 选中档：主题色实底填充 + 深色文字，远看也一眼可辨 */
 .chip.on {
   border-color: #4fc08d;
-  background: rgba(79, 192, 141, 0.08);
-  color: #4fc08d;
+  background: #4fc08d;
+  color: #0e2016;
 }
 
 .chip .count {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
   color: inherit;
-  opacity: 0.7;
-  font-weight: 600;
-  font-size: 11px;
+  font-weight: 700;
+  font-size: 11.5px;
+  line-height: 18px;
 }
 
-/* 筛选开关：与搜索框同圆角的方块，同一主题；展开或生效时高亮主题色 */
+.chip.on .count {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+/* 选中档上状态圆点转深色，避免绿底上原色不可辨 */
+.chip.on .dot.baked {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.chip.on .dot.cached,
+.chip.on .dot.remote {
+  border-color: rgba(0, 0, 0, 0.55);
+}
+
+/* 筛选开关：与搜索框同圆角的方块，实底不透出模型画面；展开或生效时高亮主题色 */
 .filter-toggle {
   flex: none;
   display: grid;
@@ -339,15 +419,16 @@ const filterActive = computed(() => stateFilter.value !== 'all' || campFilter.va
   width: 38px;
   height: 36px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: #1c1c23;
   color: #8a8a93;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .filter-toggle:hover {
+  background: #26262e;
   border-color: rgba(255, 255, 255, 0.2);
   color: #e8e8ee;
 }

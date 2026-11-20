@@ -5,6 +5,8 @@
 ## 格式要点
 
 - Unity bundle 解包、ASTC 纹理直解、typetree 解析均在 scripts/extract/（bundle.js、texture.js）；typetree 整数字段一律 BigInt（int64），比较时注意类型。
+- bundle.js `loadBundle()`：readFileSync 结果必须包一层 `new Uint8Array(buffer)` 拷出精确 ArrayBuffer——小文件走 8KB Buffer 池，直接传 Buffer 时 unityfs-js 取 `source.buffer` 带池内偏移，解析出 undefined。
+- texture.js `decodeAstcTexture()`：flip 默认 true 出标准 top-down PNG，flip=false 保留 Unity 自底向上原始行序（spine atlas 用 top-down，两解码路径须统一翻转口径，见 spine.md）。
 - moc3 v4 与 v5 同构解析；参数节表中节 51/52/53 = max/min/defaults，两代一致（moc3.js `moc3ParamTables()`）。
 - bundle 内中文文本是 GBK 编码，读字符串时需转码。
 
@@ -30,7 +32,7 @@
 - `{namecode:N}` 占位由 name_code.lua 代换。
 - `_hx` 和谐变体整层剔除，查看器一律非和谐；目录提交时纯名字条目豁免审核。
 - 索引/目录错位陷阱：UI 拉取（api.js `/api/extract` → pull_bundles）无条件顺带刷新设备索引但不刷目录——catalog 落后于 .tmp 索引不是 gen_catalog 的 bug，重跑 update.js 平账。目录同时是 UI 执行白名单（api.js `/api/extract` 校验 painting ∈ catalog），新皮肤必须先进目录才可在 UI 拉取。
-- 「新增」语义 = 设备侧新出现的 L2D bundle：游戏内未触发下载的皮肤不进目录，属正常；ani 类动态皮肤（非交互）落别的资源类别、不进 live2d 索引，判据天然排除（例：新奥尔良 103122 深夜的亲密触诊）。
+- 「新增」语义 = 设备侧新出现的 L2D/Ani bundle：游戏内未触发下载的皮肤不进目录，属正常。ani 动态皮肤走 `spinepainting/` 类别、不在 live2d 索引内——拉取与索引经 hashes.csv 全类别总索引（pull_bundles.js `readSpineIndex()`，`syncIndex()` 已前移到拉取之前），提取/烘焙/目录接入见 spine.md（例：新奥尔良 103122 深夜的亲密触诊、jianwu_2/3）。
 - scripts/dev/api.js 有接口白名单与单任务槽约束，新增接口先过白名单。
 - Lua 快照（社区明文仓库）是 UTF-8；GBK 约束只适用于 bundle 内文本，搜索模板前先确认编码。
 

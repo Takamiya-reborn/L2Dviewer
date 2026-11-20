@@ -9,16 +9,21 @@
  */
 
 // import 即执行；模块缓存使重复 import 不再进这里，用 ?t= 绕开
-const stage = document.querySelector('.canvas-host')?.__pixiApp?.stage
+const stage = document.querySelector(".canvas-host")?.__pixiApp?.stage;
 if (!stage) {
-  console.log('[diag] canvasHost.__pixiApp 句柄缺失——调试句柄契约断裂，见 src/components/L2dStage.vue')
+  console.log(
+    "[diag] canvasHost.__pixiApp 句柄缺失——调试句柄契约断裂，见 src/components/L2dStage.vue",
+  );
 } else {
-  stage.interactive = true
-  stage.hitArea = stage.renderer?.screen ?? stage.hitArea
-  stage.on('pointertap', () => console.log('[diag] pixi pointertap 触发了'))
-  let moved = false
-  stage.on('pointermove', () => {
-    if (!moved) { moved = true; console.log('[diag] pixi pointermove 触发了（pixi 事件管线存活）') }
-  })
-  console.log('[diag] 探针已挂，点击/移动指针试试')
+  stage.interactive = true;
+  stage.hitArea = stage.renderer?.screen ?? stage.hitArea;
+  stage.on("pointertap", () => console.log("[diag] pixi pointertap 触发了"));
+  let moved = false;
+  stage.on("pointermove", () => {
+    if (!moved) {
+      moved = true;
+      console.log("[diag] pixi pointermove 触发了（pixi 事件管线存活）");
+    }
+  });
+  console.log("[diag] 探针已挂，点击/移动指针试试");
 }

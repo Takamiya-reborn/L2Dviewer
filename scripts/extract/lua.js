@@ -103,7 +103,7 @@ function readSkinTemplate(text, skinId) {
     throw new Error(`ship_skin_template 中没有皮肤 ${skinId}`)
 }
 
-function readTemplateByPainting(text, painting) {
+export function readTemplateByPainting(text, painting) {
     const matches = [...text.matchAll(LUA_TEMPLATE_RE)]
     // bundle 名全小写而模板 painting 可能含大写（Z46_2 / lafeiII_3），按不区分大小写匹配
     const lineRe = new RegExp(`^\\tpainting = "${painting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}",$`, 'gmi')
