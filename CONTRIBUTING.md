@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢关注 L2Dviewer！本项目是碧蓝航线 Live2D 皮肤查看器，一个非官方的粉丝工具。欢迎以 Issue 反馈问题、以 Pull Request 提交代码与文档改进。
+感谢关注 SIREN！本项目是碧蓝航线 Live2D 皮肤查看器，一个非官方的粉丝工具。欢迎以 Issue 反馈问题、以 Pull Request 提交代码与文档改进。
 
 开始前请先通读 [README.md](README.md)，尤其是[版权说明](README.md#版权说明)一节——本项目对游戏资源有严格边界，贡献前必须了解。
 

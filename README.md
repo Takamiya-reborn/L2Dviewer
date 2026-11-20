@@ -1,8 +1,10 @@
 <div align="center">
 
-# L2Dviewer
+# SIREN
 
-<img src="public/icon.png" width="96" height="96" alt="L2Dviewer" />&nbsp;<img src="public/divider.svg" width="4" height="96" alt="" />&nbsp;<img src="public/vue.svg" width="96" height="96" alt="Vue 3" />
+_SIREN Is Redressing the Entire Navy_
+
+<img src="public/icon.png" width="96" height="96" alt="SIREN" />&nbsp;<img src="public/divider.svg" width="4" height="96" alt="" />&nbsp;<img src="public/vue.svg" width="96" height="96" alt="Vue 3" />
 
 ![Vue 3](https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vuedotjs&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
@@ -12,7 +14,7 @@
 
 </div>
 
-碧蓝航线 Live2D 皮肤查看器。从游戏客户端提取 Live2D 资源，重组为标准 Cubism 模型（Cubism 4 与 5 两代 moc3），在浏览器中原画质还原角色的动画与交互（待机、点击反应、拖拽视线跟随等），并提供按角色/皮肤分类的图鉴浏览。
+_SIREN_ 全称 _SIREN Is Redressing the Entire Navy_ 。还在因为电脑上需要安装模拟器来游玩的烦恼吗？感觉玩皮肤的时候关卡等功能都很多余？使用本项目即可无需这些繁琐的步骤，只需要连接你的手机(使用数据线或者远程调试都可以)，开启adb调试之后，就可以Enjoy这个外置的Dressing系统！
 
 - [azurlane.md](docs/azurlane.md) — 游戏资源格式与交互状态机原理
 - [unpack.md](docs/unpack.md) — 提取脚本 `extract.js` 的用法、产物与转换细节

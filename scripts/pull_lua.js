@@ -114,7 +114,7 @@ function fetchViaProxy(url, proxyUrl) {
         tlsSocket.write(
           `GET ${target.pathname} HTTP/1.1\r\n` +
             `Host: ${target.hostname}\r\n` +
-            "User-Agent: l2dviewer-pull_lua\r\n" +
+            "User-Agent: siren-pull_lua\r\n" +
             "Connection: close\r\n\r\n",
         );
       });
@@ -156,7 +156,7 @@ async function fetchBody(url, proxy) {
   if (proxy) return extractBody(await fetchViaProxy(url, proxy));
   // 直连走内置 fetch（代理用户走 --proxy / HTTPS_PROXY 分支）
   const res = await fetch(url, {
-    headers: { "User-Agent": "l2dviewer-pull_lua" },
+    headers: { "User-Agent": "siren-pull_lua" },
     signal: AbortSignal.timeout(60000),
   });
   if (!res.ok) {
